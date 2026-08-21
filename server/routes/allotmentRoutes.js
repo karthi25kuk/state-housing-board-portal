@@ -1,69 +1,58 @@
 const express = require("express");
 
 const {
-  createApplication,
-  getMyApplications,
-  getMyApplicationById,
-  getOfficerApplications,
-} = require("../controllers/applicationController");
+  createAllotment,
+  getOfficerAllotments,
+  getMyAllotments,
+  respondToAllotment,
+} = require("../controllers/allotmentController");
 
 const protect = require("../middleware/authMiddleware");
-
 const allowRoles = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
 // ==========================================
-// APPLICANT ROUTES
+// APPLICANT
 // ==========================================
-
-// Submit application
-
-router.post(
-  "/",
-  protect,
-  allowRoles("APPLICANT"),
-  createApplication
-);
-
-// Get my applications
 
 router.get(
   "/my",
   protect,
   allowRoles("APPLICANT"),
-  getMyApplications
+  getMyAllotments
 );
 
-
 // ==========================================
-// OFFICER ROUTES
+// OFFICER
 // ==========================================
 
-// Get applications for officer's schemes
+// Create allotment offer
+router.post(
+  "/",
+  protect,
+  allowRoles("OFFICER"),
+  createAllotment
+);
 
+// View officer allotments
 router.get(
   "/officer",
   protect,
   allowRoles("OFFICER"),
-  getOfficerApplications
+  getOfficerAllotments
 );
 
 
 // ==========================================
-// APPLICANT - SINGLE APPLICATION
+// APPLICANT - ACCEPT / REJECT ALLOTMENT
 // ==========================================
 
-// IMPORTANT:
-// This parameter route must come AFTER
-// specific routes such as /officer.
-
-router.get(
-  "/:applicationId",
+router.patch(
+  "/:allotmentId/respond",
   protect,
   allowRoles("APPLICANT"),
-  getMyApplicationById
+  respondToAllotment
 );
-
 
 module.exports = router;

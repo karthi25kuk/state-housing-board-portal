@@ -6,6 +6,9 @@ require("dotenv").config();
 const authRoutes = require("./routes/authRoutes");
 const schemeRoutes = require("./routes/schemeRoutes");
 const applicationRoutes = require("./routes/applicationRoutes");
+const waitingListRoutes = require("./routes/waitingListRoutes");
+const officerApplicationRoutes = require("./routes/officerApplicationRoutes");
+const allotmentRoutes = require("./routes/allotmentRoutes");
 
 const app = express();
 
@@ -35,6 +38,9 @@ app.get("/", (req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/schemes", schemeRoutes);
 app.use("/api/applications", applicationRoutes);
+app.use("/api/waiting-list", waitingListRoutes);
+app.use("/api/officer/applications", officerApplicationRoutes);
+app.use("/api/allotments", allotmentRoutes);
 
 // ================================
 // MongoDB Connection

@@ -2,6 +2,8 @@ import {
   FaInfoCircle,
   FaCheckCircle,
   FaExclamationCircle,
+  FaClock,
+  FaHome,
 } from "react-icons/fa";
 
 function NotificationCard({
@@ -16,17 +18,36 @@ function NotificationCard({
       icon: <FaInfoCircle />,
       iconStyle: "text-blue-600 bg-blue-50",
     },
+
     success: {
       icon: <FaCheckCircle />,
       iconStyle: "text-green-600 bg-green-50",
     },
+
     warning: {
       icon: <FaExclamationCircle />,
       iconStyle: "text-yellow-600 bg-yellow-50",
     },
+
+    waiting: {
+      icon: <FaClock />,
+      iconStyle: "text-purple-600 bg-purple-50",
+    },
+
+    allotment: {
+      icon: <FaHome />,
+      iconStyle: "text-green-600 bg-green-50",
+    },
+
+    rejected: {
+      icon: <FaExclamationCircle />,
+      iconStyle: "text-red-600 bg-red-50",
+    },
   };
 
-  const style = notificationStyles[type] || notificationStyles.info;
+  const style =
+    notificationStyles[type] ||
+    notificationStyles.info;
 
   return (
     <div className="flex items-start gap-4 p-4 border-b border-gray-100 last:border-b-0">
@@ -37,6 +58,7 @@ function NotificationCard({
       >
         {style.icon}
       </div>
+
 
       {/* Content */}
       <div className="flex-1 min-w-0">
@@ -55,9 +77,11 @@ function NotificationCard({
 
         </div>
 
+
         <p className="text-sm text-gray-600 mt-1">
           {message}
         </p>
+
 
         <p className="text-xs text-gray-400 mt-2">
           {date}

@@ -9,10 +9,13 @@ const User = require("../models/User");
 const generateApplicationNumber = () => {
   const year = new Date().getFullYear();
 
-  const randomNumber = Math.floor(100000 + Math.random() * 900000);
+  const randomNumber = Math.floor(
+    100000 + Math.random() * 900000
+  );
 
   return `SHA-${year}-${randomNumber}`;
 };
+
 
 // ==========================================
 // APPLY FOR HOUSING SCHEME
@@ -30,10 +33,7 @@ const createApplication = async (req, res) => {
       employmentStatus,
     } = req.body;
 
-    // ------------------------------------------
     // Validate required fields
-    // ------------------------------------------
-
     if (
       !schemeId ||
       !familyMembers ||
@@ -42,14 +42,12 @@ const createApplication = async (req, res) => {
       !employmentStatus
     ) {
       return res.status(400).json({
-        message: "Please provide all required application details.",
+        message:
+          "Please provide all required application details.",
       });
     }
 
-    // ------------------------------------------
     // Get applicant
-    // ------------------------------------------
-
     const applicant = await User.findById(applicantId);
 
     if (!applicant) {
@@ -58,13 +56,7 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ------------------------------------------
-    // IMPORTANT BUSINESS RULE
-    // ------------------------------------------
-
-    // Once applicant receives a house,
-    // they cannot apply for another scheme.
-
+    // Applicant already has a house
     if (applicant.housingStatus === "ALLOTTED") {
       return res.status(403).json({
         message:
@@ -72,10 +64,7 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ------------------------------------------
     // Get scheme
-    // ------------------------------------------
-
     const scheme = await HousingScheme.findById(schemeId);
 
     if (!scheme) {
@@ -84,66 +73,65 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ------------------------------------------
     // Scheme must be OPEN
-    // ------------------------------------------
-
     if (scheme.status !== "OPEN") {
       return res.status(400).json({
-        message: "Applications are currently not open for this scheme.",
+        message:
+          "Applications are currently not open for this scheme.",
       });
     }
 
-    // ------------------------------------------
     // Check application dates
-    // ------------------------------------------
-
     const today = new Date();
 
-    if (today < new Date(scheme.applicationStartDate)) {
+    if (
+      today < new Date(scheme.applicationStartDate)
+    ) {
       return res.status(400).json({
-        message: "Applications for this scheme have not started yet.",
+        message:
+          "Applications for this scheme have not started yet.",
       });
     }
 
-    if (today > new Date(scheme.applicationEndDate)) {
+    if (
+      today > new Date(scheme.applicationEndDate)
+    ) {
       return res.status(400).json({
-        message: "The application period for this scheme has ended.",
+        message:
+          "The application period for this scheme has ended.",
       });
     }
 
-    // ------------------------------------------
     // Check duplicate application
-    // ------------------------------------------
-
-    const existingApplication = await Application.findOne({
-      applicantId,
-      schemeId,
-    });
+    const existingApplication =
+      await Application.findOne({
+        applicantId,
+        schemeId,
+      });
 
     if (existingApplication) {
       return res.status(409).json({
-        message: "You have already applied for this housing scheme.",
+        message:
+          "You have already applied for this housing scheme.",
       });
     }
 
-    // ------------------------------------------
     // Check income category
-    // ------------------------------------------
-
-    if (!scheme.eligibleIncomeCategories.includes(incomeCategory)) {
+    if (
+      !scheme.eligibleIncomeCategories.includes(
+        incomeCategory
+      )
+    ) {
       return res.status(400).json({
         message:
           "You are not eligible for this scheme based on your income category.",
       });
     }
 
-    // ------------------------------------------
     // Create application
-    // ------------------------------------------
-
     const application = await Application.create({
-      applicationNumber: generateApplicationNumber(),
+      applicationNumber:
+        generateApplicationNumber(),
 
       applicantId,
 
@@ -163,25 +151,31 @@ const createApplication = async (req, res) => {
     });
 
     res.status(201).json({
-      message: "Housing scheme application submitted successfully.",
+      message:
+        "Housing scheme application submitted successfully.",
 
       application,
     });
   } catch (error) {
-    console.error("Create application error:", error);
+    console.error(
+      "Create application error:",
+      error
+    );
 
-    // Handle duplicate index
     if (error.code === 11000) {
       return res.status(409).json({
-        message: "You have already applied for this scheme.",
+        message:
+          "You have already applied for this scheme.",
       });
     }
 
     res.status(500).json({
-      message: "Server error while submitting application.",
+      message:
+        "Server error while submitting application.",
     });
   }
 };
+
 
 // ==========================================
 // GET APPLICANT APPLICATIONS
@@ -196,7 +190,7 @@ const getMyApplications = async (req, res) => {
     })
       .populate(
         "schemeId",
-        "schemeName district location houseModel price status",
+        "schemeName district location houseModel price status"
       )
       .sort({
         createdAt: -1,
@@ -206,16 +200,21 @@ const getMyApplications = async (req, res) => {
       applications,
     });
   } catch (error) {
-    console.error("Get applications error:", error);
+    console.error(
+      "Get applications error:",
+      error
+    );
 
     res.status(500).json({
-      message: "Server error while fetching applications.",
+      message:
+        "Server error while fetching applications.",
     });
   }
 };
 
+
 // ==========================================
-// GET SINGLE APPLICATION
+// GET SINGLE APPLICATION - APPLICANT
 // ==========================================
 
 const getMyApplicationById = async (req, res) => {
@@ -227,7 +226,10 @@ const getMyApplicationById = async (req, res) => {
     const application = await Application.findOne({
       _id: applicationId,
       applicantId,
-    }).populate("schemeId", "schemeName district location houseModel price");
+    }).populate(
+      "schemeId",
+      "schemeName district location houseModel price"
+    );
 
     if (!application) {
       return res.status(404).json({
@@ -239,16 +241,93 @@ const getMyApplicationById = async (req, res) => {
       application,
     });
   } catch (error) {
-    console.error("Get application error:", error);
+    console.error(
+      "Get application error:",
+      error
+    );
 
     res.status(500).json({
-      message: "Server error while fetching application.",
+      message:
+        "Server error while fetching application.",
     });
   }
 };
+
+// ==========================================
+// GET APPLICATIONS FOR OFFICER
+// ==========================================
+
+const getOfficerApplications = async (req, res) => {
+  try {
+    const officerId = req.user.userId;
+    const officerDistrict = req.user.district;
+
+    // ------------------------------------------
+    // Officer must have a district
+    // ------------------------------------------
+
+    if (!officerDistrict) {
+      return res.status(400).json({
+        message: "Officer district is not assigned.",
+      });
+    }
+
+    // ------------------------------------------
+    // Find schemes belonging to this officer
+    // and district
+    // ------------------------------------------
+
+    const schemes = await HousingScheme.find({
+      createdBy: officerId,
+      district: officerDistrict,
+    }).select("_id");
+
+    const schemeIds = schemes.map((scheme) => scheme._id);
+
+    // ------------------------------------------
+    // Find applications for those schemes
+    // ------------------------------------------
+
+    const applications = await Application.find({
+      schemeId: { $in: schemeIds },
+    })
+      .populate(
+        "applicantId",
+        "name email phone district"
+      )
+      .populate(
+        "schemeId",
+        "schemeName district location houseModel price"
+      )
+      .sort({
+        createdAt: -1,
+      });
+
+    res.status(200).json({
+      applications,
+    });
+  } catch (error) {
+    console.error(
+      "Get officer applications error:",
+      error
+    );
+
+    res.status(500).json({
+      message:
+        "Server error while fetching applications.",
+    });
+  }
+};
+
+// ==========================================
+// EXPORTS
+// ==========================================
 
 module.exports = {
   createApplication,
   getMyApplications,
   getMyApplicationById,
+  getOfficerApplications,
+  
 };
+

@@ -2,19 +2,20 @@ const mongoose = require("mongoose");
 
 const allotmentSchema = new mongoose.Schema(
   {
-    // --------------------------------------------------
+    // ==========================================
     // REFERENCES
-    // --------------------------------------------------
-
-    applicantId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
+    // ==========================================
 
     applicationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Application",
+      required: true,
+      unique: true,
+    },
+
+    applicantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
       required: true,
     },
 
@@ -24,51 +25,38 @@ const allotmentSchema = new mongoose.Schema(
       required: true,
     },
 
-    houseId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "House",
-        required: true,
-    },
-
-    // Officer who processed the allotment
-    allottedBy: {
+    waitingListId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "WaitingList",
       required: true,
+      unique: true,
     },
 
-    // --------------------------------------------------
-    // ALLOTMENT OFFER
-    // --------------------------------------------------
+    // ==========================================
+    // HOUSE INFORMATION
+    // ==========================================
 
-    offerDate: {
-      type: Date,
-      default: Date.now,
-    },
-
-    responseDeadline: {
-      type: Date,
-      required: true,
-    },
-
-    // --------------------------------------------------
-    // APPLICANT RESPONSE
-    // --------------------------------------------------
-
-    response: {
+    houseNumber: {
       type: String,
-      enum: ["PENDING", "ACCEPTED", "REJECTED"],
-      default: "PENDING",
+      required: true,
+      trim: true,
     },
 
-    responseDate: {
-      type: Date,
-      default: null,
+    houseModel: {
+      type: String,
+      required: true,
+      trim: true,
     },
 
-    // --------------------------------------------------
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    // ==========================================
     // ALLOTMENT STATUS
-    // --------------------------------------------------
+    // ==========================================
 
     status: {
       type: String,
@@ -76,17 +64,39 @@ const allotmentSchema = new mongoose.Schema(
         "OFFERED",
         "ACCEPTED",
         "REJECTED",
-        "COMPLETED",
         "CANCELLED",
       ],
       default: "OFFERED",
     },
 
-    // Reason when rejected/cancelled
+    // ==========================================
+    // OFFER INFORMATION
+    // ==========================================
+
+    offeredAt: {
+      type: Date,
+      default: Date.now,
+    },
+
+    respondedAt: {
+      type: Date,
+      default: null,
+    },
+
     remarks: {
       type: String,
-      trim: true,
       default: "",
+      trim: true,
+    },
+
+    // ==========================================
+    // OFFICER
+    // ==========================================
+
+    allottedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
     },
   },
   {
