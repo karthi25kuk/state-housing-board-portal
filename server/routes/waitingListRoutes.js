@@ -3,7 +3,8 @@ const express = require("express");
 const {
   getMyWaitingLists,
   getOfficerWaitingList,
-  addToWaitingList,
+  generateRanking,
+  approveRanking,
 } = require("../controllers/waitingListController");
 
 const protect = require("../middleware/authMiddleware");
@@ -34,12 +35,20 @@ router.get(
   getOfficerWaitingList
 );
 
-// Add eligible application to waiting list
+// Generate the waiting-list ranking after the application period closes
 router.post(
-  "/:applicationId/add",
+  "/:schemeId/generate",
   protect,
   allowRoles("OFFICER"),
-  addToWaitingList
+  generateRanking
+);
+
+// Approve the generated waiting-list ranking
+router.patch(
+  "/:schemeId/approve",
+  protect,
+  allowRoles("OFFICER"),
+  approveRanking
 );
 
 module.exports = router;

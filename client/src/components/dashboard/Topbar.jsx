@@ -1,16 +1,14 @@
 import { FaSearch, FaBell, FaUserCircle } from "react-icons/fa";
+import { Link } from "react-router-dom";
 
 function Topbar() {
-
   // Get logged-in user from localStorage
   const storedUser = localStorage.getItem("user");
 
   let user = {};
 
   try {
-    user = storedUser
-      ? JSON.parse(storedUser)
-      : {};
+    user = storedUser ? JSON.parse(storedUser) : {};
   } catch (error) {
     console.error("User data error:", error);
   }
@@ -35,7 +33,6 @@ function Topbar() {
 
         {/* Page Title */}
         <div>
-
           <h2 className="text-xl font-semibold text-gray-800">
             Dashboard
           </h2>
@@ -43,13 +40,11 @@ function Topbar() {
           <p className="text-sm text-gray-500">
             Welcome back! Here's an overview of your activities.
           </p>
-
         </div>
 
 
         {/* Right Section */}
         <div className="flex items-center gap-5">
-
 
           {/* Search */}
           <div className="hidden md:flex items-center border border-gray-200 rounded-lg px-3 py-2">
@@ -65,8 +60,9 @@ function Topbar() {
           </div>
 
 
-          {/* Notification */}
-          <button
+          {/* Notifications */}
+          <Link
+            to="/notifications"
             className="relative text-gray-500 hover:text-blue-600 transition"
             title="Notifications"
           >
@@ -78,11 +74,15 @@ function Topbar() {
               3
             </span>
 
-          </button>
+          </Link>
 
 
           {/* Profile */}
-          <div className="flex items-center gap-2">
+          <Link
+            to="/profile"
+            className="flex items-center gap-2"
+            title="Profile"
+          >
 
             <FaUserCircle
               size={32}
@@ -101,7 +101,7 @@ function Topbar() {
 
             </div>
 
-          </div>
+          </Link>
 
         </div>
 

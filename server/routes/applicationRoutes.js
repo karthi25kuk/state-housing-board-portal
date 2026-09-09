@@ -4,11 +4,9 @@ const {
   createApplication,
   getMyApplications,
   getMyApplicationById,
-  getOfficerApplications,
 } = require("../controllers/applicationController");
 
 const protect = require("../middleware/authMiddleware");
-
 const allowRoles = require("../middleware/roleMiddleware");
 
 const router = express.Router();
@@ -18,7 +16,6 @@ const router = express.Router();
 // ==========================================
 
 // Submit application
-
 router.post(
   "/",
   protect,
@@ -27,7 +24,6 @@ router.post(
 );
 
 // Get my applications
-
 router.get(
   "/my",
   protect,
@@ -35,35 +31,12 @@ router.get(
   getMyApplications
 );
 
-
-// ==========================================
-// OFFICER ROUTES
-// ==========================================
-
-// Get applications for officer's schemes
-
-router.get(
-  "/officer",
-  protect,
-  allowRoles("OFFICER"),
-  getOfficerApplications
-);
-
-
-// ==========================================
-// APPLICANT - SINGLE APPLICATION
-// ==========================================
-
-// IMPORTANT:
-// This parameter route must come AFTER
-// specific routes such as /officer.
-
+// Get single application
 router.get(
   "/:applicationId",
   protect,
   allowRoles("APPLICANT"),
   getMyApplicationById
 );
-
 
 module.exports = router;

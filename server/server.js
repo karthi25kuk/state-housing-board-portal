@@ -4,7 +4,8 @@ const cors = require("cors");
 require("dotenv").config();
 
 const authRoutes = require("./routes/authRoutes");
-const schemeRoutes = require("./routes/schemeRoutes");
+const adminRoutes = require("./routes/adminRoutes");
+const housingSchemeRoutes = require("./routes/housingSchemeRoutes");
 const applicationRoutes = require("./routes/applicationRoutes");
 const waitingListRoutes = require("./routes/waitingListRoutes");
 const officerApplicationRoutes = require("./routes/officerApplicationRoutes");
@@ -36,7 +37,8 @@ app.get("/", (req, res) => {
 // ================================
 
 app.use("/api/auth", authRoutes);
-app.use("/api/schemes", schemeRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/schemes", housingSchemeRoutes);
 app.use("/api/applications", applicationRoutes);
 app.use("/api/waiting-list", waitingListRoutes);
 app.use("/api/officer/applications", officerApplicationRoutes);

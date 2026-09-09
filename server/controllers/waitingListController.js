@@ -2,9 +2,9 @@ const WaitingList = require("../models/WaitingList");
 const Application = require("../models/Application");
 const HousingScheme = require("../models/HousingScheme");
 
-// ==========================================
-// GET MY WAITING LIST ENTRIES
-// ==========================================
+// ======================================================
+// GET MY WAITING LIST ENTRIES - APPLICANT
+// ======================================================
 
 const getMyWaitingLists = async (req, res) => {
   try {
@@ -15,47 +15,65 @@ const getMyWaitingLists = async (req, res) => {
     })
       .populate(
         "schemeId",
-        "schemeName district location houseModel price"
+        "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price location totalUnits availableUnits applicationStartDate applicationEndDate status"
       )
       .populate(
         "applicationId",
         "applicationNumber status submittedAt"
       )
       .sort({
-        createdAt: -1,
+        overallPosition: 1,
       });
 
     res.status(200).json({
       waitingLists,
     });
   } catch (error) {
-    console.error("Get waiting lists error:", error);
+    console.error(
+      "Get my waiting lists error:",
+      error
+    );
 
     res.status(500).json({
-      message: "Server error while fetching waiting list.",
+      message:
+        "Server error while fetching waiting list.",
     });
   }
 };
 
-// ==========================================
+
+// ======================================================
 // GET WAITING LIST FOR OFFICER
-// ==========================================
+// ======================================================
+// Officer can only see waiting lists belonging to
+// schemes assigned to that officer.
+//
+// Officer does NOT create waiting-list entries manually.
 
 const getOfficerWaitingList = async (req, res) => {
   try {
     const officerId = req.user.userId;
-    const officerDistrict = req.user.district;
 
-    // Get schemes created by this officer
+    // ==================================================
+    // FIND SCHEMES ASSIGNED TO OFFICER
+    // ==================================================
+
     const schemes = await HousingScheme.find({
-      createdBy: officerId,
-      district: officerDistrict,
+      assignedOfficer: officerId,
     }).select("_id");
 
-    const schemeIds = schemes.map((scheme) => scheme._id);
+    const schemeIds = schemes.map(
+      (scheme) => scheme._id
+    );
+
+    // ==================================================
+    // FIND WAITING LIST ENTRIES
+    // ==================================================
 
     const waitingLists = await WaitingList.find({
-      schemeId: { $in: schemeIds },
+      schemeId: {
+        $in: schemeIds,
+      },
     })
       .populate(
         "applicantId",
@@ -67,7 +85,7 @@ const getOfficerWaitingList = async (req, res) => {
       )
       .populate(
         "schemeId",
-        "schemeName district location houseModel price"
+        "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price location totalUnits availableUnits applicationStartDate applicationEndDate status"
       )
       .sort({
         overallPosition: 1,
@@ -77,185 +95,434 @@ const getOfficerWaitingList = async (req, res) => {
       waitingLists,
     });
   } catch (error) {
-    console.error("Get officer waiting list error:", error);
+    console.error(
+      "Get officer waiting list error:",
+      error
+    );
 
     res.status(500).json({
-      message: "Server error while fetching waiting list.",
+      message:
+        "Server error while fetching waiting list.",
     });
   }
 };
 
-// ==========================================
-// ADD APPLICATION TO WAITING LIST
-// ==========================================
 
-const addToWaitingList = async (req, res) => {
+// ======================================================
+// GENERATE AUTOMATIC RANKING
+// ======================================================
+// This function is called AFTER the application period
+// has closed.
+//
+// Only ELIGIBLE applications are ranked.
+//
+// The system automatically determines the ranking.
+// Officer does NOT manually add applicants.
+//
+// Current ranking rule:
+// 1. Higher family members first
+// 2. Lower annual income next
+// 3. Earlier application submission next
+//
+// This can be changed later if the project defines
+// a different official priority rule.
+
+const generateRanking = async (req, res) => {
   try {
     const officerId = req.user.userId;
-    const officerDistrict = req.user.district;
 
-    const { applicationId } = req.params;
+    const { schemeId } = req.params;
 
-    // ------------------------------------------
-    // Get application
-    // ------------------------------------------
-
-    const application = await Application.findById(
-      applicationId
-    ).populate("schemeId");
-
-    if (!application) {
-      return res.status(404).json({
-        message: "Application not found.",
-      });
-    }
-
-    // ------------------------------------------
-    // Check officer owns the scheme
-    // ------------------------------------------
+    // ==================================================
+    // FIND SCHEME
+    // ==================================================
 
     const scheme = await HousingScheme.findOne({
-      _id: application.schemeId._id,
-      createdBy: officerId,
-      district: officerDistrict,
+      _id: schemeId,
+      assignedOfficer: officerId,
     });
 
     if (!scheme) {
-      return res.status(403).json({
+      return res.status(404).json({
         message:
-          "You do not have permission to process this application.",
+          "Scheme not found or not assigned to you.",
       });
     }
 
-    // ------------------------------------------
-    // Application must be ELIGIBLE
-    // ------------------------------------------
+    // ==================================================
+    // APPLICATION PERIOD MUST BE CLOSED
+    // ==================================================
 
-    if (application.status !== "ELIGIBLE") {
+    const now = new Date();
+
+    if (
+      now <=
+      new Date(scheme.applicationEndDate)
+    ) {
       return res.status(400).json({
         message:
-          "Only eligible applications can be added to the waiting list.",
+          "Ranking can only be generated after the application period has closed.",
       });
     }
 
-    // ------------------------------------------
-    // Check duplicate waiting-list entry
-    // ------------------------------------------
+    // ==================================================
+    // UPDATE SCHEME STATUS
+    // ==================================================
 
-    const existingEntry = await WaitingList.findOne({
-      applicationId: application._id,
-    });
+    if (scheme.status === "OPEN") {
+      scheme.status = "CLOSED";
+      await scheme.save();
+    }
 
-    if (existingEntry) {
-      return res.status(409).json({
+    // ==================================================
+    // FIND ELIGIBLE APPLICATIONS
+    // ==================================================
+
+    const applications =
+      await Application.find({
+        schemeId: scheme._id,
+        status: "ELIGIBLE",
+      }).sort({
+        familyMembers: -1,
+        annualIncome: 1,
+        submittedAt: 1,
+      });
+
+    if (applications.length === 0) {
+      return res.status(200).json({
         message:
-          "This application is already in the waiting list.",
+          "No eligible applications were found for ranking.",
+        waitingLists: [],
       });
     }
 
-    // ------------------------------------------
-    // Get next overall position
-    // ------------------------------------------
+    // ==================================================
+    // REMOVE OLD ACTIVE RANKINGS
+    // ==================================================
+    // This allows ranking to be regenerated safely
+    // before the officer approves it.
 
-    const lastOverallEntry = await WaitingList.findOne({
+    await WaitingList.deleteMany({
       schemeId: scheme._id,
-    }).sort({
-      overallPosition: -1,
-    });
-
-    const overallPosition = lastOverallEntry
-      ? lastOverallEntry.overallPosition + 1
-      : 1;
-
-    // ------------------------------------------
-    // Get applicant district
-    // ------------------------------------------
-
-    const applicant = await require("../models/User").findById(
-      application.applicantId
-    );
-
-    if (!applicant) {
-      return res.status(404).json({
-        message: "Applicant not found.",
-      });
-    }
-
-    const applicantDistrict =
-      applicant.district || scheme.district;
-
-    // ------------------------------------------
-    // Get next district position
-    // ------------------------------------------
-
-    const lastDistrictEntry = await WaitingList.findOne({
-      schemeId: scheme._id,
-      district: applicantDistrict,
-    }).sort({
-      districtPosition: -1,
-    });
-
-    const districtPosition = lastDistrictEntry
-      ? lastDistrictEntry.districtPosition + 1
-      : 1;
-
-    // ------------------------------------------
-    // Create waiting-list entry
-    // ------------------------------------------
-
-    const waitingList = await WaitingList.create({
-      applicantId: application.applicantId,
-
-      applicationId: application._id,
-
-      schemeId: scheme._id,
-
-      district: applicantDistrict,
-
-      overallPosition,
-
-      districtPosition,
-
       status: "ACTIVE",
     });
 
-    // ------------------------------------------
-    // Update application status
-    // ------------------------------------------
+    // ==================================================
+    // CREATE NEW RANKING
+    // ==================================================
 
-    application.status = "WAITING_LIST";
+    const waitingListEntries = [];
 
-    await application.save();
+    for (
+      let index = 0;
+      index < applications.length;
+      index++
+    ) {
+      const application = applications[index];
 
-    // ------------------------------------------
-    // Response
-    // ------------------------------------------
+      // Applicant district comes from application.
+      // If unavailable, use scheme district.
 
-    res.status(201).json({
-      message:
-        "Application successfully added to the waiting list.",
+      const applicantDistrict =
+        application.district ||
+        scheme.district;
 
-      waitingList,
-    });
-  } catch (error) {
-    console.error("Add waiting list error:", error);
+      waitingListEntries.push({
+        applicantId:
+          application.applicantId,
 
-    if (error.code === 11000) {
-      return res.status(409).json({
-        message:
-          "This application is already in the waiting list.",
+        applicationId:
+          application._id,
+
+        schemeId:
+          scheme._id,
+
+        district:
+          applicantDistrict,
+
+        overallPosition:
+          index + 1,
+
+        districtPosition:
+          0,
+
+        status:
+          "ACTIVE",
+
+        lastUpdated:
+          new Date(),
       });
     }
 
+    // ==================================================
+    // CALCULATE DISTRICT POSITIONS
+    // ==================================================
+
+    const districtCounters = {};
+
+    for (
+      const entry of waitingListEntries
+    ) {
+      const district =
+        entry.district;
+
+      if (
+        !districtCounters[district]
+      ) {
+        districtCounters[district] = 1;
+      } else {
+        districtCounters[district]++;
+      }
+
+      entry.districtPosition =
+        districtCounters[district];
+    }
+
+    // ==================================================
+    // INSERT RANKING
+    // ==================================================
+
+    const waitingLists =
+      await WaitingList.insertMany(
+        waitingListEntries
+      );
+
+    // ==================================================
+    // UPDATE APPLICATION STATUS
+    // ==================================================
+    // Eligible applications now become part of
+    // the waiting-list/ranking process.
+
+    await Application.updateMany(
+      {
+        _id: {
+          $in: applications.map(
+            (application) =>
+              application._id
+          ),
+        },
+      },
+      {
+        $set: {
+          status: "WAITING_LIST",
+        },
+      }
+    );
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    res.status(201).json({
+      message:
+        "Waiting list ranking generated successfully.",
+
+      totalRankedApplicants:
+        waitingLists.length,
+
+      waitingLists,
+    });
+  } catch (error) {
+    console.error(
+      "Generate ranking error:",
+      error
+    );
+
     res.status(500).json({
       message:
-        "Server error while adding application to waiting list.",
+        "Server error while generating ranking.",
     });
   }
 };
+
+
+// ======================================================
+// APPROVE RANKING
+// ======================================================
+// Officer reviews the automatically generated ranking
+// and approves it.
+//
+// Officer does NOT change individual positions.
+//
+// After approval, allotment generation can begin.
+
+const approveRanking = async (req, res) => {
+  try {
+    const officerId = req.user.userId;
+
+    const { schemeId } = req.params;
+
+    // ==================================================
+    // FIND SCHEME
+    // ==================================================
+
+    const scheme = await HousingScheme.findOne({
+      _id: schemeId,
+      assignedOfficer: officerId,
+    });
+
+    if (!scheme) {
+      return res.status(404).json({
+        message:
+          "Scheme not found or not assigned to you.",
+      });
+    }
+
+    // ==================================================
+    // SCHEME MUST BE CLOSED
+    // ==================================================
+
+    if (scheme.status !== "CLOSED") {
+      return res.status(400).json({
+        message:
+          "Ranking can only be approved after the scheme is closed.",
+      });
+    }
+
+    // ==================================================
+    // CHECK RANKING
+    // ==================================================
+
+    const waitingLists =
+      await WaitingList.find({
+        schemeId: scheme._id,
+        status: "ACTIVE",
+      }).sort({
+        overallPosition: 1,
+      });
+
+    if (waitingLists.length === 0) {
+      return res.status(400).json({
+        message:
+          "No ranking is available to approve.",
+      });
+    }
+
+    // ==================================================
+    // MARK RANKING AS APPROVED
+    // ==================================================
+    // We use the scheme field below.
+    //
+    // IMPORTANT:
+    // Add these fields to HousingScheme.js:
+    //
+    // rankingGenerated: Boolean
+    // rankingApproved: Boolean
+    // rankingApprovedBy: ObjectId
+    // rankingApprovedAt: Date
+
+    scheme.rankingGenerated = true;
+
+    scheme.rankingApproved = true;
+
+    scheme.rankingApprovedBy =
+      officerId;
+
+    scheme.rankingApprovedAt =
+      new Date();
+
+    await scheme.save();
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    res.status(200).json({
+      message:
+        "Waiting list ranking approved successfully.",
+
+      rankingApproved: true,
+
+      waitingLists,
+    });
+  } catch (error) {
+    console.error(
+      "Approve ranking error:",
+      error
+    );
+
+    res.status(500).json({
+      message:
+        "Server error while approving ranking.",
+    });
+  }
+};
+
+
+// ======================================================
+// RECALCULATE WAITING LIST POSITIONS
+// ======================================================
+// Called after an applicant receives an allotment.
+//
+// All remaining ACTIVE candidates are moved upward.
+//
+// Example:
+//
+// Before:
+// 1 Ravi   -> ALLOTTED
+// 2 Kumar  -> ACTIVE
+// 3 Arun   -> ACTIVE
+//
+// After:
+// 1 Kumar
+// 2 Arun
+
+const recalculateWaitingList = async (
+  schemeId
+) => {
+  const activeEntries =
+    await WaitingList.find({
+      schemeId,
+      status: "ACTIVE",
+    }).sort({
+      overallPosition: 1,
+    });
+
+  const districtCounters = {};
+
+  for (
+    let index = 0;
+    index < activeEntries.length;
+    index++
+  ) {
+    const entry =
+      activeEntries[index];
+
+    const district =
+      entry.district;
+
+    if (
+      !districtCounters[district]
+    ) {
+      districtCounters[district] = 1;
+    } else {
+      districtCounters[district]++;
+    }
+
+    entry.overallPosition =
+      index + 1;
+
+    entry.districtPosition =
+      districtCounters[district];
+
+    entry.lastUpdated =
+      new Date();
+
+    await entry.save();
+  }
+
+  return activeEntries;
+};
+
+
+// ======================================================
+// EXPORTS
+// ======================================================
 
 module.exports = {
   getMyWaitingLists,
   getOfficerWaitingList,
-  addToWaitingList,
+  generateRanking,
+  approveRanking,
+  recalculateWaitingList,
 };

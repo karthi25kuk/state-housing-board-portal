@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FaUserCircle, FaEdit, FaSave } from "react-icons/fa";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 function Profile() {
@@ -14,7 +15,7 @@ function Profile() {
   const role = user?.role || "USER";
 
   const handleSave = () => {
-    // We will connect this to the backend later.
+    // Backend update can be connected later.
     setEditing(false);
   };
 
@@ -23,9 +24,25 @@ function Profile() {
 
       <div className="max-w-4xl mx-auto">
 
+        {/* Back */}
+
+        <Link
+          to={
+            role === "APPLICANT"
+              ? "/applicant"
+              : role === "OFFICER"
+              ? "/officer"
+              : "/admin"
+          }
+          className="text-blue-600 hover:text-blue-800 font-medium"
+        >
+          &larr; Back to Dashboard
+        </Link>
+
+
         {/* Header */}
 
-        <div className="mb-6">
+        <div className="mt-5 mb-6">
 
           <h1 className="text-2xl font-bold text-gray-800">
             My Profile
@@ -38,11 +55,11 @@ function Profile() {
         </div>
 
 
-        {/* Profile Card */}
+        {/* Profile */}
 
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
 
-          {/* Top Section */}
+          {/* Profile Header */}
 
           <div className="bg-blue-50 border-b border-gray-100 p-6">
 
@@ -73,11 +90,11 @@ function Profile() {
           </div>
 
 
-          {/* Details */}
+          {/* Personal Information */}
 
           <div className="p-6">
 
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-6">
 
               <div>
 
@@ -93,23 +110,27 @@ function Profile() {
 
 
               {!editing ? (
+
                 <button
                   type="button"
                   onClick={() => setEditing(true)}
-                  className="flex items-center gap-2 border border-blue-600 text-blue-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-50 transition"
+                  className="flex items-center gap-2 border border-blue-600 text-blue-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-50"
                 >
                   <FaEdit />
                   Edit
                 </button>
+
               ) : (
+
                 <button
                   type="button"
                   onClick={handleSave}
-                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                  className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
                 >
                   <FaSave />
                   Save
                 </button>
+
               )}
 
             </div>
@@ -128,7 +149,7 @@ function Profile() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={!editing}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none disabled:bg-gray-50 disabled:text-gray-600 focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-600"
               />
 
             </div>
@@ -147,7 +168,7 @@ function Profile() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={!editing}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none disabled:bg-gray-50 disabled:text-gray-600 focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-600"
               />
 
             </div>
@@ -167,7 +188,7 @@ function Profile() {
                 onChange={(e) => setPhone(e.target.value)}
                 disabled={!editing}
                 placeholder="Not provided"
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none disabled:bg-gray-50 disabled:text-gray-600 focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-600"
               />
 
             </div>
@@ -211,7 +232,7 @@ function Profile() {
                 User ID
               </p>
 
-              <p className="font-medium text-gray-800 mt-1">
+              <p className="font-medium text-gray-800 mt-1 break-all">
                 {user?._id || user?.id || "-"}
               </p>
 

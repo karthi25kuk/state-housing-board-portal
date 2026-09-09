@@ -23,7 +23,7 @@ const applicationSchema = new mongoose.Schema(
     },
 
     // ==========================================
-    // SCHEME
+    // HOUSING SCHEME
     // ==========================================
 
     schemeId: {
@@ -33,7 +33,58 @@ const applicationSchema = new mongoose.Schema(
     },
 
     // ==========================================
-    // APPLICATION DETAILS
+    // APPLICANT OFFICIAL DETAILS
+    // ==========================================
+
+    aadhaarNumber: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    dateOfBirth: {
+      type: Date,
+      required: true,
+    },
+
+    gender: {
+      type: String,
+      enum: ["MALE", "FEMALE", "OTHER"],
+      required: true,
+    },
+
+    mobileNumber: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    address: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    district: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    state: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    pinCode: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    // ==========================================
+    // FAMILY & INCOME DETAILS
     // ==========================================
 
     familyMembers: {
@@ -61,8 +112,37 @@ const applicationSchema = new mongoose.Schema(
         "SELF_EMPLOYED",
         "UNEMPLOYED",
         "RETIRED",
+        "OTHER",
       ],
       required: true,
+    },
+
+    occupation: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    // ==========================================
+    // DOCUMENTS
+    // ==========================================
+
+    incomeCertificateUrl: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    aadhaarDocumentUrl: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    addressProofUrl: {
+      type: String,
+      required: true,
+      trim: true,
     },
 
     // ==========================================
@@ -119,8 +199,10 @@ const applicationSchema = new mongoose.Schema(
   }
 );
 
-// Prevent the same applicant from applying
-// to the same scheme more than once.
+// ==========================================
+// PREVENT DUPLICATE APPLICATION
+// ==========================================
+
 applicationSchema.index(
   {
     applicantId: 1,

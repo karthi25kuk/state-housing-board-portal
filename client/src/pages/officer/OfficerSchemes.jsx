@@ -8,11 +8,20 @@ function OfficerSchemes() {
 
   const fetchSchemes = async () => {
     try {
+      setLoading(true);
+      setError("");
+
       const token = localStorage.getItem("token");
+
+      if (!token) {
+        setError("Your session has expired. Please login again.");
+        return;
+      }
 
       const response = await fetch(
         "http://localhost:5000/api/schemes/officer",
         {
+          method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -22,14 +31,17 @@ function OfficerSchemes() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Failed to load schemes.");
-        return;
+        throw new Error(
+          data.message || "Failed to load schemes."
+        );
       }
 
       setSchemes(data.schemes || []);
     } catch (error) {
-      console.error(error);
-      setError("Unable to connect to the server.");
+      console.error("Fetch officer schemes error:", error);
+      setError(
+        error.message || "Unable to connect to the server."
+      );
     } finally {
       setLoading(false);
     }
@@ -38,6 +50,10 @@ function OfficerSchemes() {
   useEffect(() => {
     fetchSchemes();
   }, []);
+
+  // ==================================================
+  // OPEN SCHEME
+  // ==================================================
 
   const handleOpenScheme = async (schemeId) => {
     const confirmOpen = window.confirm(
@@ -52,10 +68,9 @@ function OfficerSchemes() {
       const token = localStorage.getItem("token");
 
       const response = await fetch(
-        `http://localhost:5000/api/schemes/${schemeId}/open`,
+        `http://localhost:5000/api/schemes/officer/${schemeId}/open`,
         {
           method: "PATCH",
-
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -69,28 +84,40 @@ function OfficerSchemes() {
         return;
       }
 
-      alert("Scheme is now open for applications.");
+      alert(
+        data.message ||
+          "Scheme is now open for applications."
+      );
 
       fetchSchemes();
     } catch (error) {
-      console.error(error);
+      console.error("Open scheme error:", error);
       alert("Unable to connect to the server.");
     }
   };
 
+  // ==================================================
+  // LOADING
+  // ==================================================
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 p-6">
-        <p className="text-gray-600">
-          Loading schemes...
-        </p>
+        <div className="max-w-6xl mx-auto">
+          <p className="text-gray-600">
+            Loading schemes...
+          </p>
+        </div>
       </div>
     );
   }
 
+  // ==================================================
+  // MAIN
+  // ==================================================
+
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-
       <div className="max-w-6xl mx-auto">
 
         {/* Header */}
@@ -99,7 +126,7 @@ function OfficerSchemes() {
           <div>
             <Link
               to="/officer"
-              className="text-blue-600 text-sm font-medium"
+              className="text-blue-600 text-sm font-medium hover:text-blue-800"
             >
               &larr; Dashboard
             </Link>
@@ -109,16 +136,9 @@ function OfficerSchemes() {
             </h1>
 
             <p className="text-gray-500 mt-1">
-              Manage housing schemes for your district.
+              Housing schemes assigned to you by the administration.
             </p>
           </div>
-
-          <Link
-            to="/officer/create-scheme"
-            className="bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 text-center"
-          >
-            + Create Scheme
-          </Link>
 
         </div>
 
@@ -134,19 +154,12 @@ function OfficerSchemes() {
           <div className="bg-white border border-gray-200 rounded-xl p-10 text-center">
 
             <h2 className="text-xl font-semibold text-gray-700">
-              No schemes found
+              No schemes assigned
             </h2>
 
             <p className="text-gray-500 mt-2">
-              Create your first housing scheme for your district.
+              No housing schemes have been assigned to you by the administrator.
             </p>
-
-            <Link
-              to="/officer/create-scheme"
-              className="inline-block mt-5 bg-blue-600 text-white px-5 py-3 rounded-lg"
-            >
-              Create Scheme
-            </Link>
 
           </div>
         )}
@@ -161,7 +174,7 @@ function OfficerSchemes() {
               className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm"
             >
 
-              {/* Title */}
+              {/* Header */}
               <div className="flex items-start justify-between gap-4">
 
                 <div>
@@ -170,7 +183,7 @@ function OfficerSchemes() {
                   </h2>
 
                   <p className="text-sm text-gray-500 mt-1">
-                    {scheme.location}
+                    {scheme.location || "Location not configured"}
                   </p>
                 </div>
 
@@ -178,7 +191,9 @@ function OfficerSchemes() {
                   className={`text-xs font-semibold px-3 py-1 rounded-full ${
                     scheme.status === "OPEN"
                       ? "bg-green-100 text-green-700"
-                      : "bg-yellow-100 text-yellow-700"
+                      : scheme.status === "UPCOMING"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : "bg-gray-100 text-gray-700"
                   }`}
                 >
                   {scheme.status}
@@ -199,7 +214,7 @@ function OfficerSchemes() {
                     House Model
                   </p>
 
-                  <p className="font-medium text-gray-800">
+                  <p className="font-medium text-gray-800 mt-1">
                     {scheme.houseModel}
                   </p>
                 </div>
@@ -209,8 +224,11 @@ function OfficerSchemes() {
                     Price
                   </p>
 
-                  <p className="font-medium text-gray-800">
-                    ₹{Number(scheme.price).toLocaleString("en-IN")}
+                  <p className="font-medium text-gray-800 mt-1">
+                    ₹
+                    {Number(
+                      scheme.price || 0
+                    ).toLocaleString("en-IN")}
                   </p>
                 </div>
 
@@ -219,8 +237,8 @@ function OfficerSchemes() {
                     Total Houses
                   </p>
 
-                  <p className="font-medium text-gray-800">
-                    {scheme.totalUnits}
+                  <p className="font-medium text-gray-800 mt-1">
+                    {scheme.totalUnits ?? "-"}
                   </p>
                 </div>
 
@@ -229,8 +247,8 @@ function OfficerSchemes() {
                     Available Houses
                   </p>
 
-                  <p className="font-medium text-gray-800">
-                    {scheme.availableUnits}
+                  <p className="font-medium text-green-600 mt-1">
+                    {scheme.availableUnits ?? "-"}
                   </p>
                 </div>
 
@@ -246,10 +264,12 @@ function OfficerSchemes() {
                       Applications Open
                     </p>
 
-                    <p className="text-sm font-medium text-gray-700">
-                      {new Date(
-                        scheme.applicationStartDate
-                      ).toLocaleDateString("en-IN")}
+                    <p className="text-sm font-medium text-gray-700 mt-1">
+                      {scheme.applicationStartDate
+                        ? new Date(
+                            scheme.applicationStartDate
+                          ).toLocaleDateString("en-IN")
+                        : "Not configured"}
                     </p>
                   </div>
 
@@ -258,10 +278,12 @@ function OfficerSchemes() {
                       Applications Close
                     </p>
 
-                    <p className="text-sm font-medium text-gray-700">
-                      {new Date(
-                        scheme.applicationEndDate
-                      ).toLocaleDateString("en-IN")}
+                    <p className="text-sm font-medium text-gray-700 mt-1">
+                      {scheme.applicationEndDate
+                        ? new Date(
+                            scheme.applicationEndDate
+                          ).toLocaleDateString("en-IN")
+                        : "Not configured"}
                     </p>
                   </div>
 
@@ -276,19 +298,32 @@ function OfficerSchemes() {
                   to={`/officer/schemes/${scheme._id}`}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm"
                 >
-                  View
+                  View Details
                 </Link>
 
                 {scheme.status === "UPCOMING" && (
-                  <button
-                    onClick={() =>
-                      handleOpenScheme(scheme._id)
-                    }
+                  <Link
+                    to={`/officer/schemes/${scheme._id}`}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
                   >
-                    Open Applications
-                  </button>
+                    Configure Scheme
+                  </Link>
                 )}
+
+                {scheme.status === "UPCOMING" &&
+                  scheme.totalUnits &&
+                  scheme.location &&
+                  scheme.applicationStartDate &&
+                  scheme.applicationEndDate && (
+                    <button
+                      onClick={() =>
+                        handleOpenScheme(scheme._id)
+                      }
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                    >
+                      Open Applications
+                    </button>
+                  )}
 
               </div>
 
@@ -299,7 +334,6 @@ function OfficerSchemes() {
         </div>
 
       </div>
-
     </div>
   );
 }
