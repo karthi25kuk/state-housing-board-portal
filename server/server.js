@@ -13,6 +13,8 @@ const allotmentRoutes = require("./routes/allotmentRoutes");
 
 const app = express();
 
+mongoose.set("strictQuery", true);
+
 // ================================
 // Middleware
 // ================================

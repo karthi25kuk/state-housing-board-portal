@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { districts } from "../utils/districts";
 
 function Register() {
   const navigate = useNavigate();
@@ -8,6 +9,7 @@ function Register() {
     name: "",
     email: "",
     phone: "",
+    district: "",
     password: "",
     confirmPassword: "",
     terms: false,
@@ -32,11 +34,12 @@ function Register() {
     setError("");
     setSuccess("");
 
-    // Frontend validation
+    // Required field validation
     if (
-      !formData.name ||
-      !formData.email ||
-      !formData.phone ||
+      !formData.name.trim() ||
+      !formData.email.trim() ||
+      !formData.phone.trim() ||
+      !formData.district ||
       !formData.password ||
       !formData.confirmPassword
     ) {
@@ -44,11 +47,27 @@ function Register() {
       return;
     }
 
+    // Phone validation
+    if (!/^[6-9]\d{9}$/.test(formData.phone.trim())) {
+      setError(
+        "Please enter a valid 10-digit Indian mobile number."
+      );
+      return;
+    }
+
+    // Password validation
+    if (formData.password.length < 6) {
+      setError("Password must contain at least 6 characters.");
+      return;
+    }
+
+    // Password confirmation
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
 
+    // Terms validation
     if (!formData.terms) {
       setError("Please accept the Terms and Conditions.");
       return;
@@ -67,9 +86,10 @@ function Register() {
           },
 
           body: JSON.stringify({
-            name: formData.name,
-            email: formData.email,
-            phone: formData.phone,
+            name: formData.name.trim(),
+            email: formData.email.trim(),
+            phone: formData.phone.trim(),
+            district: formData.district,
             password: formData.password,
             confirmPassword: formData.confirmPassword,
           }),
@@ -83,9 +103,10 @@ function Register() {
         return;
       }
 
-      setSuccess("Account created successfully. Redirecting to login...");
+      setSuccess(
+        "Account created successfully. Redirecting to login..."
+      );
 
-      // Redirect after successful registration
       setTimeout(() => {
         navigate("/login");
       }, 1500);
@@ -102,7 +123,6 @@ function Register() {
 
   return (
     <section className="min-h-screen bg-slate-50 py-10 px-4">
-
       <div className="max-w-2xl mx-auto">
 
         {/* Back to Home */}
@@ -118,7 +138,6 @@ function Register() {
 
           {/* Heading */}
           <div className="text-center mb-8">
-
             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 font-bold">
               SH
             </div>
@@ -128,9 +147,9 @@ function Register() {
             </h1>
 
             <p className="text-gray-500 mt-2">
-              Create an account to access the State Housing Board portal.
+              Create an account to access the State Housing Board
+              portal.
             </p>
-
           </div>
 
           {/* Error */}
@@ -172,6 +191,7 @@ function Register() {
             {/* Email + Phone */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
+              {/* Email */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Email Address
@@ -187,6 +207,7 @@ function Register() {
                 />
               </div>
 
+              {/* Phone */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Mobile Number
@@ -197,16 +218,50 @@ function Register() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
-                  placeholder="Enter your mobile number"
+                  placeholder="Enter 10-digit mobile number"
+                  maxLength="10"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
             </div>
 
+            {/* District */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                District
+              </label>
+
+              <select
+                name="district"
+                value={formData.district}
+                onChange={handleChange}
+                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="">
+                  Select your district
+                </option>
+
+                {districts.map((district) => (
+                  <option
+                    key={district}
+                    value={district}
+                  >
+                    {district}
+                  </option>
+                ))}
+              </select>
+
+              <p className="text-xs text-gray-500 mt-1">
+                Your district will be used to show housing schemes
+                available in your district.
+              </p>
+            </div>
+
             {/* Password + Confirm Password */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
 
+              {/* Password */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Password
@@ -222,6 +277,7 @@ function Register() {
                 />
               </div>
 
+              {/* Confirm Password */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Confirm Password
@@ -270,7 +326,9 @@ function Register() {
                   : "bg-blue-600 hover:bg-blue-700"
               }`}
             >
-              {loading ? "Creating Account..." : "Create Account"}
+              {loading
+                ? "Creating Account..."
+                : "Create Account"}
             </button>
 
           </form>
@@ -288,9 +346,7 @@ function Register() {
           </p>
 
         </div>
-
       </div>
-
     </section>
   );
 }

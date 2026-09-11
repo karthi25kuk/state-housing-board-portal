@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { FaClock, FaListOl, FaUsers } from "react-icons/fa";
+import { getMyWaitingLists } from "../../services/waitingListService";
 
 function ApplicantWaitingList() {
   const [waitingLists, setWaitingLists] = useState([]);
@@ -26,36 +27,15 @@ function ApplicantWaitingList() {
           return;
         }
 
-        const response = await fetch(
-          "http://localhost:5000/api/waiting-list/my",
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        const data = await getMyWaitingLists(token);
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          setError(
-            data.message ||
-              "Failed to fetch your waiting list."
-          );
-          return;
-        }
-
-        setWaitingLists(data.waitingLists || []);
+        setWaitingLists(data || []);
       } catch (error) {
-        console.error(
-          "Fetch waiting list error:",
-          error
-        );
+        console.error("Fetch waiting list error:", error);
 
         setError(
-          "Unable to connect to the server. Please try again."
+          error.message ||
+            "Unable to load your waiting list. Please try again."
         );
       } finally {
         setLoading(false);
@@ -86,7 +66,7 @@ function ApplicantWaitingList() {
   };
 
   // ==========================================
-  // STATUS
+  // STATUS STYLE
   // ==========================================
 
   const getStatusStyle = (status) => {
@@ -94,38 +74,38 @@ function ApplicantWaitingList() {
       case "ACTIVE":
         return "bg-green-100 text-green-700";
 
-      case "COMPLETED":
-        return "bg-blue-100 text-blue-700";
-
       case "REMOVED":
         return "bg-red-100 text-red-700";
 
-      case "INACTIVE":
-        return "bg-gray-100 text-gray-600";
-
       default:
-        return "bg-yellow-100 text-yellow-700";
+        return "bg-gray-100 text-gray-600";
     }
   };
+
+  // ==========================================
+  // STATUS LABEL
+  // ==========================================
 
   const getStatusLabel = (status) => {
     switch (status) {
       case "ACTIVE":
         return "Active";
 
-      case "COMPLETED":
-        return "Completed";
-
       case "REMOVED":
         return "Removed";
 
-      case "INACTIVE":
-        return "Inactive";
-
       default:
-        return status || "Pending";
+        return status || "Unknown";
     }
   };
+
+  // ==========================================
+  // ACTIVE ENTRIES
+  // ==========================================
+
+  const activeEntries = waitingLists.filter(
+    (item) => item.status === "ACTIVE"
+  );
 
   // ==========================================
   // LOADING
@@ -134,7 +114,6 @@ function ApplicantWaitingList() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 py-8 px-4">
-
         <div className="max-w-6xl mx-auto">
 
           <Link
@@ -145,15 +124,12 @@ function ApplicantWaitingList() {
           </Link>
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 mt-6 text-center">
-
             <p className="text-gray-500">
               Loading your waiting list...
             </p>
-
           </div>
 
         </div>
-
       </div>
     );
   }
@@ -165,7 +141,6 @@ function ApplicantWaitingList() {
   if (error) {
     return (
       <div className="min-h-screen bg-slate-50 py-8 px-4">
-
         <div className="max-w-6xl mx-auto">
 
           <Link
@@ -176,7 +151,6 @@ function ApplicantWaitingList() {
           </Link>
 
           <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl p-6 mt-6">
-
             <p className="font-medium">
               Unable to load waiting list
             </p>
@@ -184,11 +158,9 @@ function ApplicantWaitingList() {
             <p className="text-sm mt-1">
               {error}
             </p>
-
           </div>
 
         </div>
-
       </div>
     );
   }
@@ -199,12 +171,9 @@ function ApplicantWaitingList() {
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
-
       <div className="max-w-6xl mx-auto">
 
-        {/* =====================================
-            HEADER
-        ===================================== */}
+        {/* HEADER */}
 
         <div className="mb-6">
 
@@ -222,18 +191,15 @@ function ApplicantWaitingList() {
             </h1>
 
             <p className="text-gray-500 mt-1">
-              View your position and status in housing
-              scheme waiting lists.
+              View your district-wise position and waiting list
+              status for eligible housing applications.
             </p>
 
           </div>
 
         </div>
 
-
-        {/* =====================================
-            SUMMARY
-        ===================================== */}
+        {/* SUMMARY */}
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-6">
 
@@ -263,7 +229,6 @@ function ApplicantWaitingList() {
 
           </div>
 
-
           {/* Active Entries */}
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
@@ -281,12 +246,7 @@ function ApplicantWaitingList() {
                 </p>
 
                 <p className="text-2xl font-bold text-gray-800 mt-1">
-                  {
-                    waitingLists.filter(
-                      (item) =>
-                        item.status === "ACTIVE"
-                    ).length
-                  }
+                  {activeEntries.length}
                 </p>
 
               </div>
@@ -295,8 +255,7 @@ function ApplicantWaitingList() {
 
           </div>
 
-
-          {/* Total Applicants */}
+          {/* Districts */}
 
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
 
@@ -309,16 +268,17 @@ function ApplicantWaitingList() {
               <div>
 
                 <p className="text-sm text-gray-500">
-                  Latest Total Applicants
+                  Districts
                 </p>
 
                 <p className="text-2xl font-bold text-gray-800 mt-1">
-
-                  {waitingLists.length > 0
-                    ? waitingLists[0]
-                        .totalApplicants || "-"
-                    : "-"}
-
+                  {
+                    new Set(
+                      waitingLists
+                        .map((item) => item.district)
+                        .filter(Boolean)
+                    ).size
+                  }
                 </p>
 
               </div>
@@ -329,19 +289,13 @@ function ApplicantWaitingList() {
 
         </div>
 
-
-        {/* =====================================
-            EMPTY STATE
-        ===================================== */}
+        {/* EMPTY STATE */}
 
         {waitingLists.length === 0 ? (
-
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-10 text-center">
 
             <div className="w-14 h-14 mx-auto rounded-full bg-gray-100 text-gray-500 flex items-center justify-center">
-
               <FaClock className="text-xl" />
-
             </div>
 
             <h2 className="text-lg font-semibold text-gray-800 mt-4">
@@ -361,28 +315,18 @@ function ApplicantWaitingList() {
             </Link>
 
           </div>
-
         ) : (
 
-          /* =====================================
-             WAITING LIST ENTRIES
-          ===================================== */
+          /* WAITING LIST ENTRIES */
 
           <div className="space-y-5">
 
             {waitingLists.map((waitingList) => {
 
-              const scheme =
-                waitingList.schemeId;
+              const scheme = waitingList.schemeId;
 
               const position =
-                waitingList.overallPosition ??
-                waitingList.districtPosition ??
-                "-";
-
-              const totalApplicants =
-                waitingList.totalApplicants ??
-                "-";
+                waitingList.districtPosition ?? "-";
 
               const status =
                 waitingList.status || "ACTIVE";
@@ -393,9 +337,7 @@ function ApplicantWaitingList() {
                   className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
                 >
 
-                  {/* =================================
-                      CARD HEADER
-                  ================================= */}
+                  {/* CARD HEADER */}
 
                   <div className="bg-blue-50 px-6 py-5 border-b border-blue-100">
 
@@ -413,13 +355,7 @@ function ApplicantWaitingList() {
                         </h2>
 
                         <p className="text-sm text-gray-600 mt-1">
-
-                          {scheme?.district || "-"}
-
-                          {scheme?.location
-                            ? ` · ${scheme.location}`
-                            : ""}
-
+                          {waitingList.district || "-"}
                         </p>
 
                       </div>
@@ -436,44 +372,11 @@ function ApplicantWaitingList() {
 
                   </div>
 
-
-                  {/* =================================
-                      WAITING LIST DETAILS
-                  ================================= */}
+                  {/* WAITING LIST DETAILS */}
 
                   <div className="p-6">
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-
-                      {/* Position */}
-
-                      <div>
-
-                        <p className="text-xs text-gray-500">
-                          Waiting Position
-                        </p>
-
-                        <p className="text-xl font-bold text-blue-600 mt-1">
-                          #{position}
-                        </p>
-
-                      </div>
-
-
-                      {/* Total Applicants */}
-
-                      <div>
-
-                        <p className="text-xs text-gray-500">
-                          Total Applicants
-                        </p>
-
-                        <p className="font-semibold text-gray-800 mt-1">
-                          {totalApplicants}
-                        </p>
-
-                      </div>
-
 
                       {/* District Position */}
 
@@ -483,13 +386,25 @@ function ApplicantWaitingList() {
                           District Position
                         </p>
 
-                        <p className="font-semibold text-gray-800 mt-1">
-                          {waitingList.districtPosition ??
-                            "-"}
+                        <p className="text-xl font-bold text-blue-600 mt-1">
+                          #{position}
                         </p>
 
                       </div>
 
+                      {/* District */}
+
+                      <div>
+
+                        <p className="text-xs text-gray-500">
+                          District
+                        </p>
+
+                        <p className="font-semibold text-gray-800 mt-1">
+                          {waitingList.district || "-"}
+                        </p>
+
+                      </div>
 
                       {/* Last Updated */}
 
@@ -501,33 +416,90 @@ function ApplicantWaitingList() {
 
                         <p className="font-semibold text-gray-800 mt-1">
                           {formatDate(
-                            waitingList.updatedAt ||
-                              waitingList.lastUpdated
+                            waitingList.lastUpdated ||
+                              waitingList.updatedAt
                           )}
+                        </p>
+
+                      </div>
+
+                      {/* Status */}
+
+                      <div>
+
+                        <p className="text-xs text-gray-500">
+                          Status
+                        </p>
+
+                        <p className="font-semibold text-gray-800 mt-1">
+                          {getStatusLabel(status)}
                         </p>
 
                       </div>
 
                     </div>
 
-
-                    {/* =================================
-                        INFORMATION
-                    ================================= */}
+                    {/* ACTIVE INFORMATION */}
 
                     {status === "ACTIVE" && (
                       <div className="mt-6 bg-blue-50 border border-blue-100 rounded-lg p-4">
 
                         <p className="text-sm text-blue-800 font-medium">
-                          Your application is currently
-                          on the waiting list.
+                          Your application is currently on
+                          the district waiting list.
                         </p>
 
                         <p className="text-sm text-blue-700 mt-1">
-                          Your position may change when
-                          other applications are processed
-                          or houses become available.
+                          Your position is determined by the
+                          district-wise ranking process.
                         </p>
+
+                      </div>
+                    )}
+
+                    {/* REMOVED INFORMATION */}
+
+                    {status === "REMOVED" && (
+                      <div className="mt-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+
+                        <p className="text-sm text-gray-700 font-medium">
+                          This waiting list entry is no longer
+                          active.
+                        </p>
+
+                        {waitingList.removalReason && (
+                          <p className="text-sm text-gray-600 mt-1">
+                            Reason:{" "}
+                            {waitingList.removalReason.replace(
+                              /_/g,
+                              " "
+                            )}
+                          </p>
+                        )}
+
+                        {waitingList.removedAt && (
+                          <p className="text-xs text-gray-500 mt-2">
+                            Removed on{" "}
+                            {formatDate(
+                              waitingList.removedAt
+                            )}
+                          </p>
+                        )}
+
+                      </div>
+                    )}
+
+                    {/* APPLICATION LINK */}
+
+                    {waitingList.applicationId?._id && (
+                      <div className="mt-6 pt-5 border-t border-gray-100">
+
+                        <Link
+                          to={`/applicant/applications/${waitingList.applicationId._id}`}
+                          className="inline-block bg-blue-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition"
+                        >
+                          View Application
+                        </Link>
 
                       </div>
                     )}
@@ -539,11 +511,9 @@ function ApplicantWaitingList() {
             })}
 
           </div>
-
         )}
 
       </div>
-
     </div>
   );
 }

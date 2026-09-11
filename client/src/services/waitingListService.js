@@ -1,13 +1,12 @@
 const API_URL = "http://localhost:5000/api/waiting-list";
 
 // ==========================================
-// GET MY WAITING LIST ENTRIES
+// GET MY ACTIVE WAITING LIST ENTRIES
 // ==========================================
 
 export const getMyWaitingLists = async (token) => {
   const response = await fetch(`${API_URL}/my`, {
     method: "GET",
-
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
@@ -22,5 +21,5 @@ export const getMyWaitingLists = async (token) => {
     );
   }
 
-  return data.waitingLists;
+  return data.waitingLists || [];
 };

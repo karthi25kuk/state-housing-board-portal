@@ -1,43 +1,26 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 import {
   FaHome,
   FaBuilding,
   FaFileAlt,
   FaClipboardList,
-  FaClock,
   FaBell,
   FaUser,
   FaSignOutAlt,
 } from "react-icons/fa";
 
+import { useAuth } from "../../context/AuthContext";
+
 function Sidebar() {
   const location = useLocation();
-  const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
-  // Get logged-in user
-  const storedUser = localStorage.getItem("user");
+  const normalizedRole = (user?.role || "APPLICANT").toUpperCase();
 
-  let user = {};
-
-  try {
-    user = storedUser
-      ? JSON.parse(storedUser)
-      : {};
-  } catch (error) {
-    console.error("User data error:", error);
-  }
-
-  const role =
-    user?.role ||
-    localStorage.getItem("role") ||
-    "APPLICANT";
-
-  const normalizedRole = role.toUpperCase();
-
-  // ------------------------------------------
+  // ==========================================
   // ROLE BASED MENU
-  // ------------------------------------------
+  // ==========================================
 
   let menuItems = [];
 
@@ -61,12 +44,10 @@ function Sidebar() {
       {
         name: "Waiting List",
         path: "/applicant/waiting-list",
-        icon: <FaClock />,
+        icon: <FaFileAlt />,
       },
     ];
-  }
-
-  else if (normalizedRole === "OFFICER") {
+  } else if (normalizedRole === "OFFICER") {
     menuItems = [
       {
         name: "Dashboard",
@@ -79,24 +60,12 @@ function Sidebar() {
         icon: <FaBuilding />,
       },
       {
-        name: "Create Scheme",
-        path: "/officer/create-scheme",
-        icon: <FaFileAlt />,
-      },
-      {
         name: "Applications",
         path: "/officer/applications",
         icon: <FaClipboardList />,
       },
-      {
-        name: "Waiting List",
-        path: "/officer/waiting-list",
-        icon: <FaClock />,
-      },
     ];
-  }
-
-  else if (normalizedRole === "ADMIN") {
+  } else if (normalizedRole === "ADMIN") {
     menuItems = [
       {
         name: "Dashboard",
@@ -105,30 +74,20 @@ function Sidebar() {
       },
       {
         name: "Housing Schemes",
-        path: "/admin/schemes",
+        path: "/admin/schemes/create",
         icon: <FaBuilding />,
       },
       {
-        name: "Applications",
-        path: "/admin/applications",
-        icon: <FaClipboardList />,
-      },
-      {
-        name: "Users",
-        path: "/admin/users",
+        name: "Create Officer",
+        path: "/admin/officers/create",
         icon: <FaUser />,
-      },
-      {
-        name: "Reports",
-        path: "/admin/reports",
-        icon: <FaFileAlt />,
       },
     ];
   }
 
-  // ------------------------------------------
+  // ==========================================
   // ACCOUNT MENU
-  // ------------------------------------------
+  // ==========================================
 
   const accountItems = [
     {
@@ -143,25 +102,36 @@ function Sidebar() {
     },
   ];
 
-  // ------------------------------------------
+  // ==========================================
   // ACTIVE LINK
-  // ------------------------------------------
+  // ==========================================
 
   const isActive = (path) => {
+    if (path === "/admin/schemes/create") {
+      return location.pathname === "/admin/schemes/create";
+    }
+
     return location.pathname === path;
   };
 
-  // ------------------------------------------
+  // ==========================================
   // LOGOUT
-  // ------------------------------------------
+  // ==========================================
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("role");
-
-    navigate("/login");
+    logout();
   };
+
+  // ==========================================
+  // ROLE LABEL
+  // ==========================================
+
+  const portalName =
+    normalizedRole === "APPLICANT"
+      ? "Applicant Portal"
+      : normalizedRole === "OFFICER"
+      ? "District Officer Portal"
+      : "Administration Portal";
 
   return (
     <aside className="w-64 min-h-screen bg-white border-r border-gray-200 shrink-0">
@@ -171,21 +141,14 @@ function Sidebar() {
       ===================================== */}
 
       <div className="px-6 py-5 border-b border-gray-200">
-
         <h1 className="text-xl font-bold text-blue-600">
           Housing Board
         </h1>
 
         <p className="text-xs text-gray-500 mt-1">
-          {normalizedRole === "APPLICANT"
-            ? "Applicant Portal"
-            : normalizedRole === "OFFICER"
-            ? "District Officer Portal"
-            : "Administration Portal"}
+          {portalName}
         </p>
-
       </div>
-
 
       {/* =====================================
           NAVIGATION
@@ -197,11 +160,8 @@ function Sidebar() {
           Main Menu
         </p>
 
-
         <div className="space-y-1">
-
           {menuItems.map((item) => (
-
             <Link
               key={item.path}
               to={item.path}
@@ -211,19 +171,12 @@ function Sidebar() {
                   : "text-gray-600 hover:bg-gray-50 hover:text-blue-600"
               }`}
             >
-
               {item.icon}
 
-              <span>
-                {item.name}
-              </span>
-
+              <span>{item.name}</span>
             </Link>
-
           ))}
-
         </div>
-
 
         {/* =================================
             ACCOUNT
@@ -233,11 +186,8 @@ function Sidebar() {
           Account
         </p>
 
-
         <div className="space-y-1">
-
           {accountItems.map((item) => (
-
             <Link
               key={item.path}
               to={item.path}
@@ -247,43 +197,29 @@ function Sidebar() {
                   : "text-gray-600 hover:bg-gray-50 hover:text-blue-600"
               }`}
             >
-
               {item.icon}
 
-              <span>
-                {item.name}
-              </span>
-
+              <span>{item.name}</span>
             </Link>
-
           ))}
-
         </div>
-
 
         {/* =================================
             LOGOUT
         ================================= */}
 
         <div className="border-t border-gray-200 mt-8 pt-4">
-
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-3 rounded-lg text-red-500 hover:bg-red-50 transition"
           >
-
             <FaSignOutAlt />
 
-            <span>
-              Logout
-            </span>
-
+            <span>Logout</span>
           </button>
-
         </div>
 
       </nav>
-
     </aside>
   );
 }

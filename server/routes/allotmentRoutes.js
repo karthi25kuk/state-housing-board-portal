@@ -7,14 +7,19 @@ const {
   respondToAllotment,
 } = require("../controllers/allotmentController");
 
-const protect = require("../middleware/authMiddleware");
-const allowRoles = require("../middleware/roleMiddleware");
+const protect =
+  require("../middleware/authMiddleware");
 
-const router = express.Router();
+const allowRoles =
+  require("../middleware/roleMiddleware");
 
-// ==========================================
+const router =
+  express.Router();
+
+
+// ======================================================
 // APPLICANT
-// ==========================================
+// ======================================================
 
 router.get(
   "/my",
@@ -23,11 +28,11 @@ router.get(
   getMyAllotments
 );
 
-// ==========================================
-// OFFICER
-// ==========================================
 
-// Create allotment offer
+// ======================================================
+// OFFICER
+// ======================================================
+
 router.post(
   "/",
   protect,
@@ -35,7 +40,6 @@ router.post(
   createAllotment
 );
 
-// View officer allotments
 router.get(
   "/officer",
   protect,
@@ -44,9 +48,9 @@ router.get(
 );
 
 
-// ==========================================
-// APPLICANT - ACCEPT / REJECT ALLOTMENT
-// ==========================================
+// ======================================================
+// APPLICANT RESPONSE
+// ======================================================
 
 router.patch(
   "/:allotmentId/respond",
@@ -54,5 +58,6 @@ router.patch(
   allowRoles("APPLICANT"),
   respondToAllotment
 );
+
 
 module.exports = router;

@@ -1,20 +1,63 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import {
+  FaBuilding,
+  FaMapMarkerAlt,
+  FaHome,
+  FaCalendarAlt,
+  FaCheckCircle,
+  FaClock,
+  FaSyncAlt,
+} from "react-icons/fa";
+
+import { useAuth } from "../../context/AuthContext";
 
 function OfficerSchemes() {
+  const { token, user } = useAuth();
+
   const [schemes, setSchemes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  const fetchSchemes = async () => {
+  const officerDistrict = user?.district?.trim();
+
+  // ==================================================
+  // GET OFFICER DISTRICT CONFIGURATION
+  // ==================================================
+
+  const getDistrictConfiguration = (scheme) => {
+    if (!scheme?.configurations?.length || !officerDistrict) {
+      return null;
+    }
+
+    return (
+      scheme.configurations.find(
+        (configuration) =>
+          configuration?.district?.trim().toLowerCase() ===
+          officerDistrict.toLowerCase()
+      ) || null
+    );
+  };
+
+  // ==================================================
+  // FETCH SCHEMES
+  // ==================================================
+
+  const fetchSchemes = async (isRefresh = false) => {
     try {
-      setLoading(true);
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
       setError("");
 
-      const token = localStorage.getItem("token");
-
       if (!token) {
-        setError("Your session has expired. Please login again.");
+        setError(
+          "Your session has expired. Please login again."
+        );
         return;
       }
 
@@ -24,6 +67,7 @@ function OfficerSchemes() {
           method: "GET",
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
           },
         }
       );
@@ -32,68 +76,142 @@ function OfficerSchemes() {
 
       if (!response.ok) {
         throw new Error(
-          data.message || "Failed to load schemes."
+          data.message || "Failed to load housing schemes."
         );
       }
 
       setSchemes(data.schemes || []);
     } catch (error) {
-      console.error("Fetch officer schemes error:", error);
+      console.error(
+        "Fetch officer schemes error:",
+        error
+      );
+
       setError(
-        error.message || "Unable to connect to the server."
+        error.message ||
+          "Unable to connect to the server."
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
+  // ==================================================
+  // INITIAL FETCH
+  // ==================================================
+
   useEffect(() => {
-    fetchSchemes();
-  }, []);
+    if (token) {
+      fetchSchemes();
+    } else {
+      setLoading(false);
+    }
+  }, [token]);
 
   // ==================================================
-  // OPEN SCHEME
+  // FORMAT DATE
   // ==================================================
 
-  const handleOpenScheme = async (schemeId) => {
-    const confirmOpen = window.confirm(
-      "Are you sure you want to open this scheme for applications?"
+  const formatDate = (date) => {
+    if (!date) {
+      return "Not configured";
+    }
+
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "Invalid date";
+    }
+
+    return parsedDate.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  // ==================================================
+  // FORMAT PRICE
+  // ==================================================
+
+  const formatPrice = (price) => {
+    if (
+      price === undefined ||
+      price === null ||
+      price === ""
+    ) {
+      return "-";
+    }
+
+    const numericPrice = Number(price);
+
+    if (Number.isNaN(numericPrice)) {
+      return "-";
+    }
+
+    return `₹${numericPrice.toLocaleString("en-IN")}`;
+  };
+
+  // ==================================================
+  // CONFIGURATION STATUS
+  // ==================================================
+
+  const getConfigurationStatus = (configuration) => {
+    if (!configuration) {
+      return {
+        label: "Not Configured",
+        className: "bg-yellow-100 text-yellow-700",
+      };
+    }
+
+    const totalUnits = Number(
+      configuration.totalUnits || 0
     );
 
-    if (!confirmOpen) {
-      return;
+    const availableUnits = Number(
+      configuration.availableUnits || 0
+    );
+
+    if (totalUnits < 1 || !configuration.location) {
+      return {
+        label: "Incomplete",
+        className: "bg-yellow-100 text-yellow-700",
+      };
     }
 
-    try {
-      const token = localStorage.getItem("token");
-
-      const response = await fetch(
-        `http://localhost:5000/api/schemes/officer/${schemeId}/open`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        alert(data.message || "Unable to open scheme.");
-        return;
-      }
-
-      alert(
-        data.message ||
-          "Scheme is now open for applications."
-      );
-
-      fetchSchemes();
-    } catch (error) {
-      console.error("Open scheme error:", error);
-      alert("Unable to connect to the server.");
+    if (availableUnits <= 0) {
+      return {
+        label: "Fully Allocated",
+        className: "bg-red-100 text-red-700",
+      };
     }
+
+    if (!configuration.allotmentDate) {
+      return {
+        label: "Not Scheduled",
+        className: "bg-gray-100 text-gray-700",
+      };
+    }
+
+    const allotmentDate = new Date(
+      configuration.allotmentDate
+    );
+
+    if (
+      !Number.isNaN(allotmentDate.getTime()) &&
+      allotmentDate > new Date()
+    ) {
+      return {
+        label: "Upcoming",
+        className: "bg-yellow-100 text-yellow-700",
+      };
+    }
+
+    return {
+      label: "Active",
+      className: "bg-green-100 text-green-700",
+    };
   };
 
   // ==================================================
@@ -103,10 +221,14 @@ function OfficerSchemes() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <p className="text-gray-600">
-            Loading schemes...
-          </p>
+        <div className="max-w-7xl mx-auto">
+          <div className="bg-white border border-gray-200 rounded-xl p-10 text-center shadow-sm">
+            <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+
+            <p className="text-gray-500">
+              Loading housing schemes...
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -118,221 +240,392 @@ function OfficerSchemes() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
+        {/* ==================================================
+            HEADER
+        ================================================== */}
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
             <Link
               to="/officer"
-              className="text-blue-600 text-sm font-medium hover:text-blue-800"
+              className="inline-flex items-center text-blue-600 text-sm font-medium hover:text-blue-800"
             >
               &larr; Dashboard
             </Link>
 
-            <h1 className="text-3xl font-bold text-gray-800 mt-2">
-              My Housing Schemes
+            <h1 className="text-3xl font-bold text-gray-800 mt-3">
+              Housing Schemes
             </h1>
 
             <p className="text-gray-500 mt-1">
-              Housing schemes assigned to you by the administration.
+              View common housing schemes and manage
+              your district-specific configurations.
             </p>
+
+            {officerDistrict && (
+              <div className="inline-flex items-center gap-2 mt-3 bg-blue-50 text-blue-700 px-3 py-2 rounded-lg text-sm">
+                <FaMapMarkerAlt />
+
+                <span>
+                  Assigned District:
+                  <strong className="ml-1">
+                    {officerDistrict}
+                  </strong>
+                </span>
+              </div>
+            )}
           </div>
 
+          <button
+            type="button"
+            onClick={() => fetchSchemes(true)}
+            disabled={refreshing}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <FaSyncAlt
+              className={
+                refreshing ? "animate-spin" : ""
+              }
+            />
+
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
         </div>
 
-        {/* Error */}
+        {/* ==================================================
+            ERROR
+        ================================================== */}
+
         {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-lg mb-6">
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-6">
             {error}
           </div>
         )}
 
-        {/* Empty */}
-        {!error && schemes.length === 0 && (
-          <div className="bg-white border border-gray-200 rounded-xl p-10 text-center">
+        {/* ==================================================
+            NO DISTRICT
+        ================================================== */}
 
-            <h2 className="text-xl font-semibold text-gray-700">
-              No schemes assigned
-            </h2>
-
-            <p className="text-gray-500 mt-2">
-              No housing schemes have been assigned to you by the administrator.
-            </p>
-
+        {!officerDistrict && (
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 p-4 rounded-lg mb-6">
+            Your officer account does not have a district
+            assigned. Please contact the administrator.
           </div>
         )}
 
-        {/* Scheme Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ==================================================
+            EMPTY
+        ================================================== */}
 
-          {schemes.map((scheme) => (
+        {!error && schemes.length === 0 && (
+          <div className="bg-white border border-gray-200 rounded-xl p-12 text-center shadow-sm">
+            <FaBuilding className="mx-auto text-4xl text-gray-300" />
 
-            <div
-              key={scheme._id}
-              className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm"
-            >
+            <h2 className="text-xl font-semibold text-gray-700 mt-4">
+              No housing schemes available
+            </h2>
 
-              {/* Header */}
-              <div className="flex items-start justify-between gap-4">
+            <p className="text-gray-500 mt-2">
+              No common housing schemes have been
+              created by the administration yet.
+            </p>
+          </div>
+        )}
 
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-800">
-                    {scheme.schemeName}
-                  </h2>
+        {/* ==================================================
+            SCHEME CARDS
+        ================================================== */}
 
-                  <p className="text-sm text-gray-500 mt-1">
-                    {scheme.location || "Location not configured"}
-                  </p>
-                </div>
+        {schemes.length > 0 && (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {schemes.map((scheme) => {
+              const configuration =
+                getDistrictConfiguration(scheme);
 
-                <span
-                  className={`text-xs font-semibold px-3 py-1 rounded-full ${
-                    scheme.status === "OPEN"
-                      ? "bg-green-100 text-green-700"
-                      : scheme.status === "UPCOMING"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : "bg-gray-100 text-gray-700"
-                  }`}
+              const totalUnits = Number(
+                configuration?.totalUnits || 0
+              );
+
+              const availableUnits = Number(
+                configuration?.availableUnits || 0
+              );
+
+              const status =
+                getConfigurationStatus(configuration);
+
+              return (
+                <div
+                  key={scheme._id}
+                  className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
                 >
-                  {scheme.status}
-                </span>
+                  {/* ==================================================
+                      SCHEME HEADER
+                  ================================================== */}
 
-              </div>
+                  <div className="p-6 border-b border-gray-100">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3">
+                        <div className="w-11 h-11 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                          <FaBuilding />
+                        </div>
 
-              {/* Description */}
-              <p className="text-gray-600 mt-4 text-sm">
-                {scheme.description}
-              </p>
+                        <div>
+                          <h2 className="text-xl font-semibold text-gray-800">
+                            {scheme.schemeName ||
+                              "Housing Scheme"}
+                          </h2>
 
-              {/* Details */}
-              <div className="grid grid-cols-2 gap-4 mt-6">
+                          <p className="text-sm text-gray-500 mt-1">
+                            {scheme.houseModel ||
+                              "House model not specified"}
+                          </p>
+                        </div>
+                      </div>
 
-                <div>
-                  <p className="text-xs text-gray-500">
-                    House Model
-                  </p>
+                      <span
+                        className={`text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap ${status.className}`}
+                      >
+                        {status.label}
+                      </span>
+                    </div>
 
-                  <p className="font-medium text-gray-800 mt-1">
-                    {scheme.houseModel}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-500">
-                    Price
-                  </p>
-
-                  <p className="font-medium text-gray-800 mt-1">
-                    ₹
-                    {Number(
-                      scheme.price || 0
-                    ).toLocaleString("en-IN")}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-500">
-                    Total Houses
-                  </p>
-
-                  <p className="font-medium text-gray-800 mt-1">
-                    {scheme.totalUnits ?? "-"}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs text-gray-500">
-                    Available Houses
-                  </p>
-
-                  <p className="font-medium text-green-600 mt-1">
-                    {scheme.availableUnits ?? "-"}
-                  </p>
-                </div>
-
-              </div>
-
-              {/* Dates */}
-              <div className="border-t border-gray-100 mt-6 pt-5">
-
-                <div className="grid grid-cols-2 gap-4">
-
-                  <div>
-                    <p className="text-xs text-gray-500">
-                      Applications Open
-                    </p>
-
-                    <p className="text-sm font-medium text-gray-700 mt-1">
-                      {scheme.applicationStartDate
-                        ? new Date(
-                            scheme.applicationStartDate
-                          ).toLocaleDateString("en-IN")
-                        : "Not configured"}
+                    <p className="text-sm text-gray-600 mt-4 leading-6">
+                      {scheme.description ||
+                        "No description available."}
                     </p>
                   </div>
 
-                  <div>
-                    <p className="text-xs text-gray-500">
-                      Applications Close
-                    </p>
+                  {/* ==================================================
+                      COMMON SCHEME DETAILS
+                  ================================================== */}
 
-                    <p className="text-sm font-medium text-gray-700 mt-1">
-                      {scheme.applicationEndDate
-                        ? new Date(
-                            scheme.applicationEndDate
-                          ).toLocaleDateString("en-IN")
-                        : "Not configured"}
-                    </p>
+                  <div className="p-6">
+                    <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">
+                      Scheme Details
+                    </h3>
+
+                    <div className="grid grid-cols-2 gap-5 mt-4">
+                      {/* House Model */}
+
+                      <div>
+                        <p className="text-xs text-gray-500">
+                          House Model
+                        </p>
+
+                        <p className="font-medium text-gray-800 mt-1">
+                          {scheme.houseModel || "-"}
+                        </p>
+                      </div>
+
+                      {/* Price */}
+
+                      <div>
+                        <p className="text-xs text-gray-500">
+                          House Price
+                        </p>
+
+                        <p className="font-medium text-gray-800 mt-1">
+                          {formatPrice(scheme.price)}
+                        </p>
+                      </div>
+
+                      {/* Eligible Categories */}
+
+                      <div>
+                        <p className="text-xs text-gray-500">
+                          Eligible Categories
+                        </p>
+
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {scheme.eligibleIncomeCategories
+                            ?.length ? (
+                            scheme.eligibleIncomeCategories.map(
+                              (category) => (
+                                <span
+                                  key={category}
+                                  className="px-2 py-1 bg-blue-50 text-blue-700 rounded text-xs font-medium"
+                                >
+                                  {category}
+                                </span>
+                              )
+                            )
+                          ) : (
+                            <span className="text-gray-500">
+                              -
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Maximum Income */}
+
+                      <div>
+                        <p className="text-xs text-gray-500">
+                          Maximum Annual Income
+                        </p>
+
+                        <p className="font-medium text-gray-800 mt-1">
+                          {formatPrice(
+                            scheme.maximumAnnualIncome
+                          )}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
+                  {/* ==================================================
+                      DISTRICT OPERATIONS
+                  ================================================== */}
+
+                  <div className="px-6 pb-6">
+                    <div className="border-t border-gray-100 pt-5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">
+                            {officerDistrict
+                              ? `${officerDistrict} District`
+                              : "District"}{" "}
+                            Operations
+                          </h3>
+
+                          <p className="text-xs text-gray-500 mt-1">
+                            Housing configuration managed
+                            by the district officer.
+                          </p>
+                        </div>
+
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${status.className}`}
+                        >
+                          {status.label ===
+                          "Active" ? (
+                            <FaCheckCircle />
+                          ) : (
+                            <FaClock />
+                          )}
+
+                          {status.label}
+                        </span>
+                      </div>
+
+                      {!configuration && (
+                        <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                          <p className="text-sm font-medium text-yellow-800">
+                            District configuration not
+                            created
+                          </p>
+
+                          <p className="text-xs text-yellow-700 mt-1">
+                            Configure the housing location,
+                            total units and allotment date
+                            for your district.
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5">
+                        {/* Location */}
+
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <FaMapMarkerAlt className="text-blue-600 mb-2" />
+
+                          <p className="text-xs text-gray-500">
+                            Location
+                          </p>
+
+                          <p className="text-sm font-medium text-gray-800 mt-1 wrap-break-word">
+                            {configuration?.location ||
+                              "Not configured"}
+                          </p>
+                        </div>
+
+                        {/* Total Units */}
+
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <FaHome className="text-blue-600 mb-2" />
+
+                          <p className="text-xs text-gray-500">
+                            Total Houses
+                          </p>
+
+                          <p className="text-sm font-medium text-gray-800 mt-1">
+                            {configuration
+                              ? totalUnits
+                              : "-"}
+                          </p>
+                        </div>
+
+                        {/* Available Units */}
+
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <FaCheckCircle className="text-green-600 mb-2" />
+
+                          <p className="text-xs text-gray-500">
+                            Available
+                          </p>
+
+                          <p className="text-sm font-medium text-green-700 mt-1">
+                            {configuration
+                              ? availableUnits
+                              : "-"}
+                          </p>
+                        </div>
+
+                        {/* Allotment Date */}
+
+                        <div className="bg-gray-50 rounded-lg p-3">
+                          <FaCalendarAlt className="text-purple-600 mb-2" />
+
+                          <p className="text-xs text-gray-500">
+                            Allotment Date
+                          </p>
+
+                          <p className="text-xs font-medium text-gray-800 mt-1">
+                            {formatDate(
+                              configuration?.allotmentDate
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ==================================================
+                      ACTIONS
+                  ================================================== */}
+
+                  <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
+                    <div className="flex flex-wrap gap-3">
+                      <Link
+                        to={`/officer/schemes/${scheme._id}`}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-white text-sm font-medium transition"
+                      >
+                        View Details
+                      </Link>
+
+                      <Link
+                        to={`/officer/schemes/${scheme._id}`}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition"
+                      >
+                        {configuration
+                          ? "Edit Configuration"
+                          : "Configure District"}
+                      </Link>
+
+                      <Link
+                        to="/officer/applications"
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium transition"
+                      >
+                        Applications
+                      </Link>
+                    </div>
+                  </div>
                 </div>
-
-              </div>
-
-              {/* Actions */}
-              <div className="flex flex-wrap gap-3 mt-6">
-
-                <Link
-                  to={`/officer/schemes/${scheme._id}`}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm"
-                >
-                  View Details
-                </Link>
-
-                {scheme.status === "UPCOMING" && (
-                  <Link
-                    to={`/officer/schemes/${scheme._id}`}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                  >
-                    Configure Scheme
-                  </Link>
-                )}
-
-                {scheme.status === "UPCOMING" &&
-                  scheme.totalUnits &&
-                  scheme.location &&
-                  scheme.applicationStartDate &&
-                  scheme.applicationEndDate && (
-                    <button
-                      onClick={() =>
-                        handleOpenScheme(scheme._id)
-                      }
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                    >
-                      Open Applications
-                    </button>
-                  )}
-
-              </div>
-
-            </div>
-
-          ))}
-
-        </div>
-
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

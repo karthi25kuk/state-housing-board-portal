@@ -1,4 +1,3 @@
-import React from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -27,6 +26,7 @@ import ApplicantDashboard from "./pages/Applicant/ApplicantDashboard";
 import ApplyScheme from "./pages/Applicant/ApplyScheme";
 import MyAllotments from "./pages/Applicant/MyAllotments";
 import ApplicantSchemes from "./pages/Applicant/ApplicantSchemes";
+import ApplicantSchemeDetails from "./pages/Applicant/ApplicantSchemeDetails";
 import MyApplications from "./pages/Applicant/MyApplications";
 import ApplicantApplicationDetails from "./pages/Applicant/ApplicantApplicationDetails";
 import ApplicantWaitingList from "./pages/Applicant/ApplicantWaitingList";
@@ -157,6 +157,15 @@ const App = () => {
           element={
             <ProtectedRoute allowedRoles={["APPLICANT"]}>
               <ApplicantSchemes />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/applicant/schemes/:schemeId"
+          element={
+            <ProtectedRoute allowedRoles={["APPLICANT"]}>
+              <ApplicantSchemeDetails />
             </ProtectedRoute>
           }
         />

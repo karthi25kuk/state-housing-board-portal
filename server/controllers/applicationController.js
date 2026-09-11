@@ -2,9 +2,9 @@ const Application = require("../models/Application");
 const HousingScheme = require("../models/HousingScheme");
 const User = require("../models/User");
 
-// ==========================================
+// ======================================================
 // GENERATE APPLICATION NUMBER
-// ==========================================
+// ======================================================
 
 const generateApplicationNumber = () => {
   const year = new Date().getFullYear();
@@ -16,28 +16,50 @@ const generateApplicationNumber = () => {
   return `SHA-${year}-${randomNumber}`;
 };
 
-
-// ==========================================
+// ======================================================
 // APPLY FOR HOUSING SCHEME
-// ==========================================
-// Applicant can apply only when:
-// 1. Scheme exists
-// 2. Scheme is OPEN
-// 3. Current date is within application period
-// 4. Applicant has not already applied
-// 5. Applicant is eligible based on
-//    scheme income category and maximum income
-// 6. Applicant has not already been allotted a house
+// ======================================================
 //
-// Scheme details such as:
-// - Scheme name
-// - Description
-// - Income category
-// - Maximum income
-// - House model
-// - House price
+// IMPORTANT WORKFLOW:
 //
-// CANNOT be changed by the applicant.
+// Scheme is a STANDARD/common entity created by ADMIN.
+//
+// Applicant can apply even when their district has
+// NO housing configuration yet.
+//
+// Workflow:
+//
+// Applicant
+//     ↓
+// Standard Housing Scheme
+//     ↓
+// Registered District Verification
+//     ↓
+// Scheme Eligibility Check
+//     ↓
+// Application Created
+//     ↓
+// SUBMITTED
+//     ↓
+// Officer verifies
+//     ↓
+// ELIGIBLE / REJECTED
+//     ↓
+// ELIGIBLE → WaitingList
+//     ↓
+// District ranking
+//     ↓
+// Officer configures housing
+//     ↓
+// Allotment based on ranking
+//
+// IMPORTANT:
+//
+// District configuration is NOT required to apply.
+//
+// District configuration is required later for
+// allotment only.
+// ======================================================
 
 const createApplication = async (req, res) => {
   try {
@@ -46,34 +68,30 @@ const createApplication = async (req, res) => {
     const {
       schemeId,
 
-      // Applicant official details
       aadhaarNumber,
       dateOfBirth,
       gender,
       mobileNumber,
 
-      // Address
       address,
       district,
       state,
       pinCode,
 
-      // Family & income
       familyMembers,
       annualIncome,
       incomeCategory,
       employmentStatus,
       occupation,
 
-      // Documents
       incomeCertificateUrl,
       aadhaarDocumentUrl,
       addressProofUrl,
     } = req.body;
 
-    // ==========================================
+    // ==================================================
     // VALIDATE REQUIRED FIELDS
-    // ==========================================
+    // ==================================================
 
     if (
       !schemeId ||
@@ -100,11 +118,12 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ==========================================
+    // ==================================================
     // GET APPLICANT
-    // ==========================================
+    // ==================================================
 
-    const applicant = await User.findById(applicantId);
+    const applicant =
+      await User.findById(applicantId);
 
     if (!applicant) {
       return res.status(404).json({
@@ -112,71 +131,113 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // CHECK EXISTING ALLOTMENT
-    // ==========================================
-    // Applicant who already received a house
-    // cannot apply for another scheme.
+    // ==================================================
+    // CHECK APPLICANT ROLE
+    // ==================================================
 
-    if (applicant.housingStatus === "ALLOTTED") {
+    if (applicant.role !== "APPLICANT") {
+      return res.status(403).json({
+        message:
+          "Only applicants can submit housing applications.",
+      });
+    }
+
+    // ==================================================
+    // CHECK ACCOUNT STATUS
+    // ==================================================
+
+    if (!applicant.isActive) {
+      return res.status(403).json({
+        message:
+          "Your account is inactive. Please contact the administrator.",
+      });
+    }
+
+    // ==================================================
+    // CHECK HOUSING STATUS
+    // ==================================================
+
+    if (
+      applicant.housingStatus ===
+      "ALLOTTED"
+    ) {
       return res.status(403).json({
         message:
           "You have already been allotted a house and cannot apply for another housing scheme.",
       });
     }
 
-    // ==========================================
-    // GET HOUSING SCHEME
-    // ==========================================
+    // ==================================================
+    // REGISTERED DISTRICT CHECK
+    // ==================================================
+    //
+    // User.district is the source of truth.
+    //
+    // Applicant cannot submit an application for a
+    // different district.
+    //
+    // ==================================================
 
-    const scheme = await HousingScheme.findById(
-      schemeId
-    );
+    if (
+      !applicant.district ||
+      !applicant.district.trim()
+    ) {
+      return res.status(400).json({
+        message:
+          "Your registered district is missing. Please update your profile before applying.",
+      });
+    }
+
+    const registeredDistrict =
+      applicant.district.trim();
+
+    const submittedDistrict =
+      String(district).trim();
+
+    if (
+      registeredDistrict.toLowerCase() !==
+      submittedDistrict.toLowerCase()
+    ) {
+      return res.status(400).json({
+        message:
+          "Application district must match your registered district.",
+      });
+    }
+
+    // ==================================================
+    // GET STANDARD HOUSING SCHEME
+    // ==================================================
+
+    const scheme =
+      await HousingScheme.findById(
+        schemeId
+      );
 
     if (!scheme) {
       return res.status(404).json({
-        message: "Housing scheme not found.",
-      });
-    }
-
-    // ==========================================
-    // SCHEME MUST BE OPEN
-    // ==========================================
-
-    if (scheme.status !== "OPEN") {
-      return res.status(400).json({
         message:
-          "Applications are currently not open for this scheme.",
+          "Housing scheme not found.",
       });
     }
 
-    // ==========================================
-    // CHECK APPLICATION PERIOD
-    // ==========================================
+    // ==================================================
+    // IMPORTANT:
+    //
+    // DO NOT CHECK DISTRICT CONFIGURATION HERE.
+    //
+    // The scheme may have:
+    //
+    // configurations: []
+    //
+    // and the applicant must STILL be able to apply.
+    //
+    // Configuration is required only for allotment.
+    //
+    // ==================================================
 
-    const now = new Date();
-
-    if (
-      now < new Date(scheme.applicationStartDate)
-    ) {
-      return res.status(400).json({
-        message:
-          "Applications for this scheme have not started yet.",
-      });
-    }
-
-    if (
-      now > new Date(scheme.applicationEndDate)
-    ) {
-      return res.status(400).json({
-        message:
-          "The application period for this scheme has ended.",
-      });
-    }
-
-    // ==========================================
+    // ==================================================
     // CHECK DUPLICATE APPLICATION
-    // ==========================================
+    // ==================================================
 
     const existingApplication =
       await Application.findOne({
@@ -191,13 +252,18 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ==========================================
+    // ==================================================
     // VALIDATE FAMILY MEMBERS
-    // ==========================================
+    // ==================================================
+
+    const parsedFamilyMembers =
+      Number(familyMembers);
 
     if (
-      !Number.isInteger(Number(familyMembers)) ||
-      Number(familyMembers) < 1
+      !Number.isInteger(
+        parsedFamilyMembers
+      ) ||
+      parsedFamilyMembers < 1
     ) {
       return res.status(400).json({
         message:
@@ -205,44 +271,77 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ==========================================
+    // ==================================================
     // VALIDATE ANNUAL INCOME
-    // ==========================================
+    // ==================================================
 
-    if (Number(annualIncome) < 0) {
+    const parsedAnnualIncome =
+      Number(annualIncome);
+
+    if (
+      !Number.isFinite(
+        parsedAnnualIncome
+      ) ||
+      parsedAnnualIncome < 0
+    ) {
       return res.status(400).json({
         message:
-          "Annual income cannot be negative.",
+          "Annual income must be a valid non-negative number.",
       });
     }
 
-    // ==========================================
-    // CHECK INCOME CATEGORY ELIGIBILITY
-    // ==========================================
-    // Eligibility comes from the ADMIN-CREATED
-    // fixed housing scheme.
+    // ==================================================
+    // VALIDATE INCOME CATEGORY
+    // ==================================================
 
-    const eligibleCategories =
-      scheme.eligibleIncomeCategories || [];
+    const allowedIncomeCategories = [
+      "EWS",
+      "LIG",
+      "MIG",
+      "HIG",
+    ];
+
+    const normalizedIncomeCategory =
+      String(incomeCategory)
+        .trim()
+        .toUpperCase();
 
     if (
-      !eligibleCategories.includes(
-        incomeCategory
+      !allowedIncomeCategories.includes(
+        normalizedIncomeCategory
       )
     ) {
       return res.status(400).json({
         message:
-          `Your income category (${incomeCategory}) is not eligible for this housing scheme.`,
+          "Invalid income category.",
       });
     }
 
-    // ==========================================
-    // CHECK MAXIMUM ANNUAL INCOME
-    // ==========================================
+    // ==================================================
+    // CHECK SCHEME ELIGIBLE CATEGORY
+    // ==================================================
 
     if (
-      Number(annualIncome) >
-      Number(scheme.maximumAnnualIncome)
+      !scheme.eligibleIncomeCategories.includes(
+        normalizedIncomeCategory
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          `Your income category (${normalizedIncomeCategory}) ` +
+          "is not eligible for this housing scheme.",
+      });
+    }
+
+    // ==================================================
+    // CHECK MAXIMUM ANNUAL INCOME
+    // ==================================================
+
+    if (
+      parsedAnnualIncome >
+      Number(
+        scheme.maximumAnnualIncome
+      )
     ) {
       return res.status(400).json({
         message:
@@ -250,42 +349,194 @@ const createApplication = async (req, res) => {
       });
     }
 
-    // ==========================================
-    // VALIDATE AADHAAR
-    // ==========================================
+    // ==================================================
+    // VALIDATE GENDER
+    // ==================================================
 
-    if (!/^\d{12}$/.test(aadhaarNumber)) {
+    const normalizedGender =
+      String(gender)
+        .trim()
+        .toUpperCase();
+
+    const allowedGenders = [
+      "MALE",
+      "FEMALE",
+      "OTHER",
+    ];
+
+    if (
+      !allowedGenders.includes(
+        normalizedGender
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid gender value.",
+      });
+    }
+
+    // ==================================================
+    // VALIDATE EMPLOYMENT STATUS
+    // ==================================================
+
+    const normalizedEmploymentStatus =
+      String(employmentStatus)
+        .trim()
+        .toUpperCase();
+
+    const allowedEmploymentStatuses = [
+      "EMPLOYED",
+      "SELF_EMPLOYED",
+      "UNEMPLOYED",
+      "RETIRED",
+      "OTHER",
+    ];
+
+    if (
+      !allowedEmploymentStatuses.includes(
+        normalizedEmploymentStatus
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid employment status.",
+      });
+    }
+
+    // ==================================================
+    // VALIDATE AADHAAR
+    // ==================================================
+
+    const cleanAadhaar =
+      String(aadhaarNumber).trim();
+
+    if (
+      !/^\d{12}$/.test(
+        cleanAadhaar
+      )
+    ) {
       return res.status(400).json({
         message:
           "Aadhaar number must contain exactly 12 digits.",
       });
     }
 
-    // ==========================================
+    // ==================================================
     // VALIDATE MOBILE NUMBER
-    // ==========================================
+    // ==================================================
 
-    if (!/^[6-9]\d{9}$/.test(mobileNumber)) {
+    const cleanMobile =
+      String(mobileNumber).trim();
+
+    if (
+      !/^[6-9]\d{9}$/.test(
+        cleanMobile
+      )
+    ) {
       return res.status(400).json({
         message:
-          "Please enter a valid 10-digit mobile number.",
+          "Please enter a valid 10-digit Indian mobile number.",
       });
     }
 
-    // ==========================================
+    // ==================================================
     // VALIDATE PIN CODE
-    // ==========================================
+    // ==================================================
 
-    if (!/^\d{6}$/.test(pinCode)) {
+    const cleanPinCode =
+      String(pinCode).trim();
+
+    if (
+      !/^\d{6}$/.test(
+        cleanPinCode
+      )
+    ) {
       return res.status(400).json({
         message:
           "PIN code must contain exactly 6 digits.",
       });
     }
 
-    // ==========================================
+    // ==================================================
+    // VALIDATE DATE OF BIRTH
+    // ==================================================
+
+    const parsedDateOfBirth =
+      new Date(dateOfBirth);
+
+    if (
+      Number.isNaN(
+        parsedDateOfBirth.getTime()
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Please provide a valid date of birth.",
+      });
+    }
+
+    if (
+      parsedDateOfBirth >= new Date()
+    ) {
+      return res.status(400).json({
+        message:
+          "Date of birth must be in the past.",
+      });
+    }
+
+    // ==================================================
+    // VALIDATE TEXT FIELDS
+    // ==================================================
+
+    const cleanAddress =
+      String(address).trim();
+
+    const cleanState =
+      String(state).trim();
+
+    const cleanOccupation =
+      String(occupation).trim();
+
+    const cleanIncomeCertificateUrl =
+      String(
+        incomeCertificateUrl
+      ).trim();
+
+    const cleanAadhaarDocumentUrl =
+      String(
+        aadhaarDocumentUrl
+      ).trim();
+
+    const cleanAddressProofUrl =
+      String(
+        addressProofUrl
+      ).trim();
+
+    if (
+      !cleanAddress ||
+      !cleanState ||
+      !cleanOccupation
+    ) {
+      return res.status(400).json({
+        message:
+          "Address, state and occupation cannot be empty.",
+      });
+    }
+
+    if (
+      !cleanIncomeCertificateUrl ||
+      !cleanAadhaarDocumentUrl ||
+      !cleanAddressProofUrl
+    ) {
+      return res.status(400).json({
+        message:
+          "Required document references cannot be empty.",
+      });
+    }
+
+    // ==================================================
     // CREATE APPLICATION
-    // ==========================================
+    // ==================================================
 
     const application =
       await Application.create({
@@ -296,71 +547,84 @@ const createApplication = async (req, res) => {
 
         schemeId,
 
-        // ------------------------------------------
-        // Applicant official details
-        // ------------------------------------------
+        // ----------------------------------------------
+        // APPLICANT SNAPSHOT
+        // ----------------------------------------------
 
-        aadhaarNumber,
+        aadhaarNumber:
+          cleanAadhaar,
 
-        dateOfBirth,
+        dateOfBirth:
+          parsedDateOfBirth,
 
-        gender,
+        gender:
+          normalizedGender,
 
-        mobileNumber,
+        mobileNumber:
+          cleanMobile,
 
-        // ------------------------------------------
-        // Address
-        // ------------------------------------------
+        address:
+          cleanAddress,
 
-        address,
+        // IMPORTANT:
+        // Always store the verified registered district.
+        district:
+          registeredDistrict,
 
-        district,
+        state:
+          cleanState,
 
-        state,
+        pinCode:
+          cleanPinCode,
 
-        pinCode,
-
-        // ------------------------------------------
-        // Family & income
-        // ------------------------------------------
+        // ----------------------------------------------
+        // FAMILY / INCOME
+        // ----------------------------------------------
 
         familyMembers:
-          Number(familyMembers),
+          parsedFamilyMembers,
 
         annualIncome:
-          Number(annualIncome),
+          parsedAnnualIncome,
 
-        incomeCategory,
+        incomeCategory:
+          normalizedIncomeCategory,
 
-        employmentStatus,
+        employmentStatus:
+          normalizedEmploymentStatus,
 
-        occupation,
+        occupation:
+          cleanOccupation,
 
-        // ------------------------------------------
-        // Documents
-        // ------------------------------------------
+        // ----------------------------------------------
+        // DOCUMENTS
+        // ----------------------------------------------
 
-        incomeCertificateUrl,
+        incomeCertificateUrl:
+          cleanIncomeCertificateUrl,
 
-        aadhaarDocumentUrl,
+        aadhaarDocumentUrl:
+          cleanAadhaarDocumentUrl,
 
-        addressProofUrl,
+        addressProofUrl:
+          cleanAddressProofUrl,
 
-        // ------------------------------------------
-        // Initial status
-        // ------------------------------------------
-        // Officer will later verify this application.
+        // ----------------------------------------------
+        // STATUS
+        // ----------------------------------------------
 
-        status: "SUBMITTED",
+        status:
+          "SUBMITTED",
 
-        submittedAt: new Date(),
+        submittedAt:
+          new Date(),
       });
 
-    // ==========================================
+    // ==================================================
     // RESPONSE
-    // ==========================================
+    // ==================================================
 
-    res.status(201).json({
+    return res.status(201).json({
       message:
         "Housing scheme application submitted successfully.",
 
@@ -372,43 +636,56 @@ const createApplication = async (req, res) => {
       error
     );
 
-    // ==========================================
+    // ==================================================
     // DUPLICATE APPLICATION
-    // ==========================================
+    // ==================================================
 
-    if (error.code === 11000) {
+    if (
+      error.code === 11000
+    ) {
       return res.status(409).json({
         message:
-          "You have already applied for this scheme.",
+          "You have already applied for this housing scheme.",
       });
     }
 
-    res.status(500).json({
+    // ==================================================
+    // VALIDATION ERROR
+    // ==================================================
+
+    if (
+      error.name ===
+      "ValidationError"
+    ) {
+      return res.status(400).json({
+        message:
+          error.message ||
+          "Invalid application data.",
+      });
+    }
+
+    // ==================================================
+    // SERVER ERROR
+    // ==================================================
+
+    return res.status(500).json({
       message:
         "Server error while submitting application.",
     });
   }
 };
 
-
-// ==========================================
+// ======================================================
 // GET MY APPLICATIONS
-// ==========================================
-// Applicant can see all applications submitted
-// by them.
-//
-// This also allows the frontend to show:
-// SUBMITTED
-// ELIGIBLE
-// REJECTED
-// WAITING_LIST
-// ALLOTMENT_OFFERED
-// ALLOTTED
-// etc.
+// ======================================================
 
-const getMyApplications = async (req, res) => {
+const getMyApplications = async (
+  req,
+  res
+) => {
   try {
-    const applicantId = req.user.userId;
+    const applicantId =
+      req.user.userId;
 
     const applications =
       await Application.find({
@@ -423,19 +700,15 @@ const getMyApplications = async (req, res) => {
           maximumAnnualIncome
           houseModel
           price
-          location
-          totalUnits
-          availableUnits
-          applicationStartDate
-          applicationEndDate
-          status
+          configurations
+          createdBy
           `
         )
         .sort({
           createdAt: -1,
         });
 
-    res.status(200).json({
+    return res.status(200).json({
       applications,
     });
   } catch (error) {
@@ -444,27 +717,28 @@ const getMyApplications = async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error while fetching applications.",
     });
   }
 };
 
-
-// ==========================================
+// ======================================================
 // GET SINGLE APPLICATION
-// ==========================================
-// Applicant can view only their own application.
+// ======================================================
 
 const getMyApplicationById = async (
   req,
   res
 ) => {
   try {
-    const applicantId = req.user.userId;
+    const applicantId =
+      req.user.userId;
 
-    const { applicationId } = req.params;
+    const {
+      applicationId,
+    } = req.params;
 
     const application =
       await Application.findOne({
@@ -479,12 +753,8 @@ const getMyApplicationById = async (
         maximumAnnualIncome
         houseModel
         price
-        location
-        totalUnits
-        availableUnits
-        applicationStartDate
-        applicationEndDate
-        status
+        configurations
+        createdBy
         `
       );
 
@@ -495,7 +765,7 @@ const getMyApplicationById = async (
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       application,
     });
   } catch (error) {
@@ -504,20 +774,115 @@ const getMyApplicationById = async (
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error while fetching application.",
     });
   }
 };
 
+// ======================================================
+// WITHDRAW APPLICATION
+// ======================================================
+//
+// Applicant can withdraw:
+//
+// SUBMITTED
+// UNDER_VERIFICATION
+// ELIGIBLE
+//
+// After withdrawal:
+//
+// Application → WITHDRAWN
+//
+// The waiting-list controller/workflow should remove
+// any ACTIVE waiting-list entry associated with this
+// application.
+// ======================================================
 
-// ==========================================
+const withdrawApplication = async (
+  req,
+  res
+) => {
+  try {
+    const applicantId =
+      req.user.userId;
+
+    const {
+      applicationId,
+    } = req.params;
+
+    const application =
+      await Application.findOne({
+        _id: applicationId,
+        applicantId,
+      });
+
+    if (!application) {
+      return res.status(404).json({
+        message:
+          "Application not found.",
+      });
+    }
+
+    // ==================================================
+    // STATUS CHECK
+    // ==================================================
+
+    if (
+      ![
+        "SUBMITTED",
+        "UNDER_VERIFICATION",
+        "ELIGIBLE",
+      ].includes(
+        application.status
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "This application cannot be withdrawn in its current status.",
+      });
+    }
+
+    // ==================================================
+    // UPDATE
+    // ==================================================
+
+    application.status =
+      "WITHDRAWN";
+
+    await application.save();
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
+      message:
+        "Housing application withdrawn successfully.",
+
+      application,
+    });
+  } catch (error) {
+    console.error(
+      "Withdraw application error:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Server error while withdrawing application.",
+    });
+  }
+};
+
+// ======================================================
 // EXPORTS
-// ==========================================
+// ======================================================
 
 module.exports = {
   createApplication,
   getMyApplications,
   getMyApplicationById,
+  withdrawApplication,
 };

@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { districts } from "../../utils/districts";
 
 function CreateOfficer() {
   const navigate = useNavigate();
+  const { token } = useAuth();
 
   const [formData, setFormData] = useState({
     name: "",
@@ -16,9 +19,9 @@ function CreateOfficer() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // ==================================================
+  // ==========================================
   // HANDLE INPUT
-  // ==================================================
+  // ==========================================
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -29,33 +32,40 @@ function CreateOfficer() {
     }));
   };
 
-  // ==================================================
+  // ==========================================
   // SUBMIT
-  // ==================================================
+  // ==========================================
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     setError("");
 
-    // -----------------------------------------------
+    const name = formData.name.trim();
+    const email = formData.email.trim().toLowerCase();
+    const phone = formData.phone.trim();
+    const district = formData.district.trim();
+
+    // ==========================================
     // FRONTEND VALIDATION
-    // -----------------------------------------------
+    // ==========================================
 
     if (
-      !formData.name ||
-      !formData.email ||
-      !formData.phone ||
+      !name ||
+      !email ||
+      !phone ||
       !formData.password ||
       !formData.confirmPassword ||
-      !formData.district
+      !district
     ) {
       setError("Please fill in all fields.");
       return;
     }
 
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match.");
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      setError(
+        "Please enter a valid 10-digit Indian mobile number."
+      );
       return;
     }
 
@@ -66,22 +76,37 @@ function CreateOfficer() {
       return;
     }
 
+    if (formData.password !== formData.confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    if (!token) {
+      setError(
+        "Your session has expired. Please login again."
+      );
+      return;
+    }
+
     try {
       setLoading(true);
-
-      const token = localStorage.getItem("token");
 
       const response = await fetch(
         "http://localhost:5000/api/admin/officers",
         {
           method: "POST",
-
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-
-          body: JSON.stringify(formData),
+          body: JSON.stringify({
+            name,
+            email,
+            phone,
+            password: formData.password,
+            confirmPassword: formData.confirmPassword,
+            district,
+          }),
         }
       );
 
@@ -93,30 +118,21 @@ function CreateOfficer() {
         );
       }
 
-      // ==================================================
-      // SUCCESS → REDIRECT TO ADMIN DASHBOARD
-      // ==================================================
-
       navigate("/admin");
-
     } catch (error) {
-      console.error(
-        "Create officer error:",
-        error
-      );
+      console.error("Create officer error:", error);
 
       setError(
-        error.message ||
-          "Unable to create officer."
+        error.message || "Unable to create officer."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  // ==================================================
+  // ==========================================
   // UI
-  // ==================================================
+  // ==========================================
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -145,8 +161,6 @@ function CreateOfficer() {
 
         <div className="mb-8">
 
-          {/* BACK BUTTON */}
-
           <button
             type="button"
             onClick={() => navigate("/admin")}
@@ -160,8 +174,8 @@ function CreateOfficer() {
           </h2>
 
           <p className="text-gray-500 mt-1">
-            Create an officer account and assign
-            the officer to a district.
+            Create an officer account and assign the
+            officer to a district.
           </p>
 
         </div>
@@ -229,7 +243,8 @@ function CreateOfficer() {
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
-                placeholder="Enter phone number"
+                placeholder="Enter 10-digit phone number"
+                maxLength={10}
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -241,14 +256,19 @@ function CreateOfficer() {
                 District
               </label>
 
-              <input
-                type="text"
+              <select
                 name="district"
                 value={formData.district}
                 onChange={handleChange}
-                placeholder="Enter assigned district"
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+              >
+                <option value="">Select assigned district</option>
+                {districts.map((district) => (
+                  <option key={district} value={district}>
+                    {district}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* PASSWORD */}
@@ -291,8 +311,6 @@ function CreateOfficer() {
 
           <div className="flex justify-end gap-3 mt-8">
 
-            {/* BACK */}
-
             <button
               type="button"
               onClick={() => navigate("/admin")}
@@ -301,12 +319,10 @@ function CreateOfficer() {
               Back
             </button>
 
-            {/* CREATE */}
-
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading
                 ? "Creating Officer..."

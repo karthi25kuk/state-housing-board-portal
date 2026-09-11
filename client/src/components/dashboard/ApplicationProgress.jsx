@@ -11,7 +11,6 @@ function ApplicationProgress({ currentStep = 1 }) {
 
       {/* Header */}
       <div className="mb-8">
-
         <h3 className="text-lg font-semibold text-gray-800">
           Application Progress
         </h3>
@@ -19,34 +18,22 @@ function ApplicationProgress({ currentStep = 1 }) {
         <p className="text-sm text-gray-500 mt-1">
           Track the progress of your current housing application.
         </p>
-
       </div>
-
 
       {/* Progress */}
       <div className="flex items-start">
-
         {steps.map((step, index) => {
-
           const stepNumber = index + 1;
 
-          const completed =
-            stepNumber <= currentStep;
-
-          const isCurrent =
-            stepNumber === currentStep;
-
-          const isLast =
-            index === steps.length - 1;
+          const completed = stepNumber <= currentStep;
+          const isCurrent = stepNumber === currentStep;
+          const isLast = index === steps.length - 1;
 
           return (
             <div
               key={step}
               className="flex-1 flex flex-col items-center relative"
             >
-
-              {/* Connecting Line */}
-
               {!isLast && (
                 <div
                   className={`absolute top-4 left-1/2 w-full h-0.5 ${
@@ -56,9 +43,6 @@ function ApplicationProgress({ currentStep = 1 }) {
                   }`}
                 />
               )}
-
-
-              {/* Circle */}
 
               <div
                 className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
@@ -74,9 +58,6 @@ function ApplicationProgress({ currentStep = 1 }) {
                 {stepNumber}
               </div>
 
-
-              {/* Step Name */}
-
               <p
                 className={`text-xs sm:text-sm text-center mt-3 max-w-28 ${
                   completed
@@ -86,11 +67,9 @@ function ApplicationProgress({ currentStep = 1 }) {
               >
                 {step}
               </p>
-
             </div>
           );
         })}
-
       </div>
 
     </div>

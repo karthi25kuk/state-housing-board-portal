@@ -1,27 +1,56 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
+import { useAuth } from "../context/AuthContext";
+
+import {
+  getMyApplications,
+} from "../services/applicationService";
+
+import {
+  getMyWaitingLists,
+} from "../services/waitingListService";
+
 function Notifications() {
+  const { token } = useAuth();
+
   const [applications, setApplications] = useState([]);
+  const [waitingLists, setWaitingLists] = useState([]);
+  const [allotments, setAllotments] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   // ==========================================
-  // FETCH APPLICATIONS
+  // FETCH ALL USER ACTIVITY
   // ==========================================
 
   useEffect(() => {
-    const fetchApplications = async () => {
+    const fetchNotificationData = async () => {
+      if (!token) {
+        setError(
+          "Your session has expired. Please login again."
+        );
+        setLoading(false);
+        return;
+      }
+
       try {
-        const token = localStorage.getItem("token");
+        setLoading(true);
+        setError("");
 
-        if (!token) {
-          setError("Your session has expired. Please login again.");
-          return;
-        }
+        const [applicationResult, waitingListResult] =
+          await Promise.all([
+            getMyApplications(token),
+            getMyWaitingLists(token),
+          ]);
 
-        const response = await fetch(
-          "http://localhost:5000/api/applications/my",
+        setApplications(applicationResult || []);
+        setWaitingLists(waitingListResult || []);
+
+        // Allotment endpoint
+        const allotmentResponse = await fetch(
+          "http://localhost:5000/api/allotments/my",
           {
             method: "GET",
             headers: {
@@ -31,29 +60,41 @@ function Notifications() {
           }
         );
 
-        const data = await response.json();
+        let allotmentData = {};
 
-        if (!response.ok) {
-          setError(
-            data.message || "Failed to fetch notifications."
-          );
-          return;
+        try {
+          allotmentData = await allotmentResponse.json();
+        } catch {
+          allotmentData = {};
         }
 
-        setApplications(data.applications || []);
+        if (!allotmentResponse.ok) {
+          throw new Error(
+            allotmentData.message ||
+              "Failed to fetch allotment updates."
+          );
+        }
+
+        setAllotments(
+          allotmentData.allotments || []
+        );
       } catch (error) {
-        console.error("Fetch notifications error:", error);
+        console.error(
+          "Fetch notifications error:",
+          error
+        );
 
         setError(
-          "Unable to connect to the server. Please try again."
+          error.message ||
+            "Unable to connect to the server. Please try again."
         );
       } finally {
         setLoading(false);
       }
     };
 
-    fetchApplications();
-  }, []);
+    fetchNotificationData();
+  }, [token]);
 
   // ==========================================
   // DATE FORMATTER
@@ -76,28 +117,38 @@ function Notifications() {
   };
 
   // ==========================================
-  // CREATE NOTIFICATIONS
+  // NOTIFICATION GENERATOR
   // ==========================================
 
-  const generateNotifications = () => {
-    const notifications = [];
+  const notifications = useMemo(() => {
+    const result = [];
+
+    // ==========================================
+    // APPLICATION NOTIFICATIONS
+    // ==========================================
 
     applications.forEach((application) => {
+      const applicationId =
+        application._id;
+
       const applicationNumber =
-        application.applicationNumber || "Application";
+        application.applicationNumber ||
+        "Application";
 
       const schemeName =
         application.schemeId?.schemeName ||
-        application.scheme?.schemeName ||
         "Housing Scheme";
 
-      // ------------------------------------------
-      // Application Submitted
-      // ------------------------------------------
+      // ----------------------------------------
+      // APPLICATION SUBMITTED
+      // ----------------------------------------
 
-      if (application.submittedAt || application.createdAt) {
-        notifications.push({
-          id: `${application._id}-submitted`,
+      if (
+        application.submittedAt ||
+        application.createdAt
+      ) {
+        result.push({
+          id: `${applicationId}-submitted`,
           type: "success",
           title: "Application Submitted",
           message: `Your application ${applicationNumber} for ${schemeName} has been submitted successfully.`,
@@ -107,104 +158,255 @@ function Notifications() {
         });
       }
 
-      // ------------------------------------------
-      // Under Verification
-      // ------------------------------------------
+      // ----------------------------------------
+      // UNDER VERIFICATION
+      // ----------------------------------------
 
-      if (application.status === "UNDER_VERIFICATION") {
-        notifications.push({
-          id: `${application._id}-verification`,
+      if (
+        application.status ===
+        "UNDER_VERIFICATION"
+      ) {
+        result.push({
+          id: `${applicationId}-verification`,
           type: "info",
           title: "Application Under Verification",
           message: `Your application ${applicationNumber} is currently under verification.`,
-          date: application.updatedAt,
+          date:
+            application.updatedAt ||
+            application.verifiedAt,
         });
       }
 
-      // ------------------------------------------
-      // Eligible
-      // ------------------------------------------
+      // ----------------------------------------
+      // ELIGIBLE
+      // ----------------------------------------
 
-      if (application.status === "ELIGIBLE") {
-        notifications.push({
-          id: `${application._id}-eligible`,
+      if (
+        application.status === "ELIGIBLE"
+      ) {
+        result.push({
+          id: `${applicationId}-eligible`,
           type: "success",
           title: "Application Eligible",
           message: `Your application ${applicationNumber} for ${schemeName} has been verified and marked eligible.`,
-          date: application.updatedAt,
+          date:
+            application.verifiedAt ||
+            application.updatedAt,
         });
       }
 
-      // ------------------------------------------
-      // Waiting List
-      // ------------------------------------------
-
-      if (application.status === "WAITING_LIST") {
-        notifications.push({
-          id: `${application._id}-waiting`,
-          type: "warning",
-          title: "Added to Waiting List",
-          message: `Your application ${applicationNumber} has been added to the waiting list for ${schemeName}.`,
-          date: application.updatedAt,
-        });
-      }
-
-      // ------------------------------------------
-      // Allotment Offered
-      // ------------------------------------------
-
-      if (application.status === "ALLOTMENT_OFFERED") {
-        notifications.push({
-          id: `${application._id}-offer`,
-          type: "success",
-          title: "House Allotment Offered",
-          message: `A house allotment has been offered for your application ${applicationNumber}.`,
-          date: application.updatedAt,
-        });
-      }
-
-      // ------------------------------------------
-      // Allotted
-      // ------------------------------------------
-
-      if (application.status === "ALLOTTED") {
-        notifications.push({
-          id: `${application._id}-allotted`,
-          type: "success",
-          title: "House Allotted",
-          message: `Congratulations! A house has been allotted to you under ${schemeName}.`,
-          date: application.updatedAt,
-        });
-      }
-
-      // ------------------------------------------
-      // Rejected
-      // ------------------------------------------
+      // ----------------------------------------
+      // REJECTED
+      // ----------------------------------------
 
       if (
-        application.status === "REJECTED" ||
-        application.status === "INELIGIBLE"
+        application.status === "REJECTED"
       ) {
-        notifications.push({
-          id: `${application._id}-rejected`,
+        result.push({
+          id: `${applicationId}-rejected`,
           type: "error",
           title: "Application Rejected",
-          message: `Your application ${applicationNumber} was not approved for ${schemeName}.`,
-          date: application.updatedAt,
+          message:
+            application.verificationRemarks
+              ? `Your application ${applicationNumber} was rejected. Reason: ${application.verificationRemarks}`
+              : `Your application ${applicationNumber} was not approved for ${schemeName}.`,
+          date:
+            application.verifiedAt ||
+            application.updatedAt,
         });
       }
 
-      // ------------------------------------------
-      // Withdrawn
-      // ------------------------------------------
+      // ----------------------------------------
+      // WITHDRAWN
+      // ----------------------------------------
 
-      if (application.status === "WITHDRAWN") {
-        notifications.push({
-          id: `${application._id}-withdrawn`,
+      if (
+        application.status === "WITHDRAWN"
+      ) {
+        result.push({
+          id: `${applicationId}-withdrawn`,
           type: "warning",
           title: "Application Withdrawn",
-          message: `Your application ${applicationNumber} has been withdrawn.`,
+          message: `Your application ${applicationNumber} for ${schemeName} has been withdrawn.`,
           date: application.updatedAt,
+        });
+      }
+    });
+
+    // ==========================================
+    // WAITING LIST NOTIFICATIONS
+    // ==========================================
+
+    waitingLists.forEach((waitingList) => {
+      const waitingListId =
+        waitingList._id;
+
+      const schemeName =
+        waitingList.schemeId?.schemeName ||
+        "Housing Scheme";
+
+      const position =
+        waitingList.districtPosition || "-";
+
+      // ----------------------------------------
+      // ACTIVE WAITING LIST
+      // ----------------------------------------
+
+      if (
+        waitingList.status === "ACTIVE"
+      ) {
+        result.push({
+          id: `${waitingListId}-active`,
+          type: "warning",
+          title: "Added to District Waiting List",
+          message: `You are currently at district position #${position} for ${schemeName}.`,
+          date:
+            waitingList.lastUpdated ||
+            waitingList.updatedAt ||
+            waitingList.createdAt,
+        });
+      }
+
+      // ----------------------------------------
+      // REMOVED WAITING LIST
+      // ----------------------------------------
+
+      if (
+        waitingList.status === "REMOVED"
+      ) {
+        let message =
+          `Your waiting-list entry for ${schemeName} is no longer active.`;
+
+        if (
+          waitingList.removalReason ===
+          "ALLOTMENT_ACCEPTED"
+        ) {
+          message =
+            `Your waiting-list entry for ${schemeName} was removed because an allotment was accepted.`;
+        } else if (
+          waitingList.removalReason ===
+          "ALLOTMENT_REJECTED"
+        ) {
+          message =
+            `Your previous waiting-list entry for ${schemeName} was updated after an allotment offer was rejected.`;
+        } else if (
+          waitingList.removalReason ===
+          "ALLOTTED_FROM_OTHER_SCHEME"
+        ) {
+          message =
+            `Your waiting-list entry for ${schemeName} was removed because a house was allotted to you under another scheme.`;
+        } else if (
+          waitingList.removalReason ===
+          "APPLICATION_REJECTED"
+        ) {
+          message =
+            `Your waiting-list entry for ${schemeName} was removed because the application was rejected.`;
+        } else if (
+          waitingList.removalReason ===
+          "APPLICATION_WITHDRAWN"
+        ) {
+          message =
+            `Your waiting-list entry for ${schemeName} was removed because the application was withdrawn.`;
+        }
+
+        result.push({
+          id: `${waitingListId}-removed`,
+          type: "info",
+          title: "Waiting List Updated",
+          message,
+          date:
+            waitingList.removedAt ||
+            waitingList.lastUpdated ||
+            waitingList.updatedAt,
+        });
+      }
+    });
+
+    // ==========================================
+    // ALLOTMENT NOTIFICATIONS
+    // ==========================================
+
+    allotments.forEach((allotment) => {
+      const allotmentId =
+        allotment._id;
+
+      const applicationNumber =
+        allotment.applicationId?.applicationNumber ||
+        "your application";
+
+      const schemeName =
+        allotment.schemeId?.schemeName ||
+        "Housing Scheme";
+
+      // ----------------------------------------
+      // OFFERED
+      // ----------------------------------------
+
+      if (
+        allotment.status === "OFFERED"
+      ) {
+        result.push({
+          id: `${allotmentId}-offered`,
+          type: "success",
+          title: "House Allotment Offered",
+          message: `A house has been offered to you under ${schemeName} for ${applicationNumber}. Please review and respond to the offer.`,
+          date: allotment.offeredAt,
+        });
+      }
+
+      // ----------------------------------------
+      // ACCEPTED
+      // ----------------------------------------
+
+      if (
+        allotment.status === "ACCEPTED"
+      ) {
+        result.push({
+          id: `${allotmentId}-accepted`,
+          type: "success",
+          title: "House Allotment Accepted",
+          message: `Your house allotment under ${schemeName} has been accepted successfully. House number: ${
+            allotment.houseNumber || "-"
+          }.`,
+          date:
+            allotment.respondedAt ||
+            allotment.offeredAt,
+        });
+      }
+
+      // ----------------------------------------
+      // REJECTED
+      // ----------------------------------------
+
+      if (
+        allotment.status === "REJECTED"
+      ) {
+        result.push({
+          id: `${allotmentId}-rejected`,
+          type: "warning",
+          title: "Allotment Offer Rejected",
+          message: `The house allotment offer under ${schemeName} was rejected. The house has been returned to available inventory.`,
+          date:
+            allotment.respondedAt ||
+            allotment.offeredAt,
+        });
+      }
+
+      // ----------------------------------------
+      // CANCELLED
+      // ----------------------------------------
+
+      if (
+        allotment.status === "CANCELLED"
+      ) {
+        result.push({
+          id: `${allotmentId}-cancelled`,
+          type: "error",
+          title: "Allotment Cancelled",
+          message: `The housing allotment under ${schemeName} has been cancelled.`,
+          date:
+            allotment.respondedAt ||
+            allotment.offeredAt,
         });
       }
     });
@@ -213,16 +415,18 @@ function Notifications() {
     // SORT NEWEST FIRST
     // ==========================================
 
-    notifications.sort(
+    result.sort(
       (a, b) =>
         new Date(b.date || 0) -
         new Date(a.date || 0)
     );
 
-    return notifications;
-  };
-
-  const notifications = generateNotifications();
+    return result;
+  }, [
+    applications,
+    waitingLists,
+    allotments,
+  ]);
 
   // ==========================================
   // NOTIFICATION STYLE
@@ -238,6 +442,7 @@ function Notifications() {
             "bg-green-100 text-green-600",
           title:
             "text-green-800",
+          symbol: "✓",
         };
 
       case "info":
@@ -248,6 +453,7 @@ function Notifications() {
             "bg-blue-100 text-blue-600",
           title:
             "text-blue-800",
+          symbol: "i",
         };
 
       case "warning":
@@ -258,6 +464,7 @@ function Notifications() {
             "bg-yellow-100 text-yellow-600",
           title:
             "text-yellow-800",
+          symbol: "!",
         };
 
       case "error":
@@ -268,6 +475,7 @@ function Notifications() {
             "bg-red-100 text-red-600",
           title:
             "text-red-800",
+          symbol: "×",
         };
 
       default:
@@ -278,6 +486,7 @@ function Notifications() {
             "bg-gray-100 text-gray-600",
           title:
             "text-gray-800",
+          symbol: "•",
         };
     }
   };
@@ -306,7 +515,6 @@ function Notifications() {
     return (
       <div className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-5xl mx-auto">
-
           <Link
             to="/applicant"
             className="text-blue-600 hover:text-blue-800 font-medium"
@@ -317,7 +525,6 @@ function Notifications() {
           <div className="mt-6 bg-red-50 border border-red-200 text-red-600 rounded-xl p-5">
             {error}
           </div>
-
         </div>
       </div>
     );
@@ -329,13 +536,10 @@ function Notifications() {
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
-
       <div className="max-w-5xl mx-auto">
-
-        {/* Header */}
+        {/* HEADER */}
 
         <div className="mb-6">
-
           <Link
             to="/applicant"
             className="text-blue-600 hover:text-blue-800 font-medium"
@@ -344,24 +548,20 @@ function Notifications() {
           </Link>
 
           <div className="mt-5">
-
             <h1 className="text-2xl font-bold text-gray-800">
               Notifications
             </h1>
 
             <p className="text-gray-500 mt-1">
-              View all updates related to your housing applications.
+              View all updates related to your housing
+              applications, waiting lists and allotments.
             </p>
-
           </div>
-
         </div>
 
-
-        {/* Notification Count */}
+        {/* NOTIFICATION COUNT */}
 
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 mb-6">
-
           <p className="text-sm text-gray-500">
             Total Notifications
           </p>
@@ -369,34 +569,33 @@ function Notifications() {
           <p className="text-2xl font-bold text-gray-800 mt-1">
             {notifications.length}
           </p>
-
         </div>
 
-
-        {/* Empty State */}
+        {/* EMPTY STATE */}
 
         {notifications.length === 0 ? (
-
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-10 text-center">
-
             <h2 className="text-lg font-semibold text-gray-800">
               No Notifications
             </h2>
 
             <p className="text-gray-500 mt-2">
-              You currently have no application updates.
+              You currently have no application, waiting-list
+              or allotment updates.
             </p>
 
+            <Link
+              to="/applicant/schemes"
+              className="inline-block mt-5 text-blue-600 font-medium hover:text-blue-800"
+            >
+              Explore Housing Schemes →
+            </Link>
           </div>
-
         ) : (
-
-          /* All Notifications */
+          /* ALL NOTIFICATIONS */
 
           <div className="space-y-4">
-
             {notifications.map((notification) => {
-
               const style =
                 getNotificationStyle(
                   notification.type
@@ -407,24 +606,19 @@ function Notifications() {
                   key={notification.id}
                   className={`border rounded-xl p-5 ${style.container}`}
                 >
-
                   <div className="flex gap-4">
-
-                    {/* Icon */}
+                    {/* ICON */}
 
                     <div
-                      className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${style.icon}`}
+                      className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold ${style.icon}`}
                     >
-                      ✓
+                      {style.symbol}
                     </div>
 
-
-                    {/* Content */}
+                    {/* CONTENT */}
 
                     <div className="flex-1">
-
                       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-
                         <h3
                           className={`font-semibold ${style.title}`}
                         >
@@ -432,29 +626,23 @@ function Notifications() {
                         </h3>
 
                         <span className="text-xs text-gray-500">
-                          {formatDate(notification.date)}
+                          {formatDate(
+                            notification.date
+                          )}
                         </span>
-
                       </div>
 
                       <p className="text-sm text-gray-600 mt-2">
                         {notification.message}
                       </p>
-
                     </div>
-
                   </div>
-
                 </div>
               );
             })}
-
           </div>
-
         )}
-
       </div>
-
     </div>
   );
 }

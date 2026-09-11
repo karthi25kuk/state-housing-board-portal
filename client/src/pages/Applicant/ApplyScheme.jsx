@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import { getSchemeById } from "../../services/schemeService";
+import { createApplication } from "../../services/applicationService";
 
 function ApplyScheme() {
   const { schemeId } = useParams();
   const navigate = useNavigate();
+  const { user, token } = useAuth();
 
   const [scheme, setScheme] = useState(null);
 
@@ -22,7 +25,6 @@ function ApplyScheme() {
   // ==========================================
 
   const [address, setAddress] = useState("");
-  const [district, setDistrict] = useState("");
   const [state, setState] = useState("");
   const [pinCode, setPinCode] = useState("");
 
@@ -55,9 +57,28 @@ function ApplyScheme() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // ==========================================
+  // APPLICANT DISTRICT
+  // ==========================================
+  //
+  // District comes from the registered User account.
+  // Applicant cannot change it here.
+  //
+
+  const district = user?.district || "";
+
+  // ==========================================
+  // PREFILL USER DETAILS
+  // ==========================================
+
+  useEffect(() => {
+    if (user?.phone) {
+      setMobileNumber(user.phone);
+    }
+  }, [user]);
 
   // ==========================================
   // FETCH SCHEME
@@ -69,9 +90,10 @@ function ApplyScheme() {
         setLoading(true);
         setError("");
 
-        const token = localStorage.getItem("token");
+        const authToken =
+          token || localStorage.getItem("token");
 
-        if (!token) {
+        if (!authToken) {
           setError(
             "Your session has expired. Please login again."
           );
@@ -83,7 +105,10 @@ function ApplyScheme() {
           return;
         }
 
-        const data = await getSchemeById(token, schemeId);
+        const data = await getSchemeById(
+          authToken,
+          schemeId
+        );
 
         if (!data) {
           setError("Housing scheme not found.");
@@ -104,7 +129,7 @@ function ApplyScheme() {
     };
 
     fetchScheme();
-  }, [schemeId]);
+  }, [schemeId, token]);
 
   // ==========================================
   // VALIDATE AADHAAR
@@ -142,11 +167,23 @@ function ApplyScheme() {
     setError("");
     setSuccess("");
 
-    const token = localStorage.getItem("token");
+    const authToken =
+      token || localStorage.getItem("token");
 
-    if (!token) {
+    if (!authToken) {
       setError(
         "Your session has expired. Please login again."
+      );
+      return;
+    }
+
+    // ==========================================
+    // APPLICANT DISTRICT CHECK
+    // ==========================================
+
+    if (!district.trim()) {
+      setError(
+        "Your registered district is missing. Please update your profile before applying."
       );
       return;
     }
@@ -161,14 +198,16 @@ function ApplyScheme() {
       !gender ||
       !mobileNumber ||
       !address ||
-      !district ||
       !state ||
       !pinCode ||
       !familyMembers ||
       !annualIncome ||
       !incomeCategory ||
       !employmentStatus ||
-      !occupation
+      !occupation ||
+      !incomeCertificateUrl ||
+      !aadhaarDocumentUrl ||
+      !addressProofUrl
     ) {
       setError("Please fill in all required fields.");
       return;
@@ -201,7 +240,9 @@ function ApplyScheme() {
     // ==========================================
 
     if (!validatePinCode()) {
-      setError("PIN code must contain exactly 6 digits.");
+      setError(
+        "PIN code must contain exactly 6 digits."
+      );
       return;
     }
 
@@ -209,7 +250,10 @@ function ApplyScheme() {
     // FAMILY MEMBERS
     // ==========================================
 
-    if (Number(familyMembers) < 1) {
+    if (
+      !Number.isInteger(Number(familyMembers)) ||
+      Number(familyMembers) < 1
+    ) {
       setError(
         "Family members must be at least 1."
       );
@@ -238,94 +282,60 @@ function ApplyScheme() {
       return;
     }
 
-    if (scheme.status !== "OPEN") {
-      setError(
-        "Applications are currently not open for this scheme."
-      );
-      return;
-    }
-
-    if (
-      scheme.availableUnits !== undefined &&
-      Number(scheme.availableUnits) <= 0
-    ) {
-      setError(
-        "No houses are currently available in this scheme."
-      );
-      return;
-    }
-
     // ==========================================
-    // SUBMIT
+    // SUBMIT APPLICATION
     // ==========================================
+    //
+    // IMPORTANT:
+    // Applicant does NOT need a district configuration
+    // to apply.
+    //
+    // Officer configuration is required later during
+    // the allotment process.
+    //
 
     try {
       setSubmitting(true);
 
-      const response = await fetch(
-        "http://localhost:5000/api/applications",
+      const data = await createApplication(
+        authToken,
         {
-          method: "POST",
+          schemeId,
 
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          // Applicant
+          aadhaarNumber:
+            aadhaarNumber.replace(/\s/g, ""),
+          dateOfBirth,
+          gender,
+          mobileNumber,
 
-          body: JSON.stringify({
-            // Scheme
-            schemeId,
+          // Address
+          address,
 
-            // Applicant
-            aadhaarNumber:
-              aadhaarNumber.replace(/\s/g, ""),
+          // District comes from registered User.district
+          district: district.trim(),
 
-            dateOfBirth,
+          state: state.trim(),
+          pinCode,
 
-            gender,
+          // Family / Income
+          familyMembers: Number(familyMembers),
+          annualIncome: Number(annualIncome),
+          incomeCategory,
+          employmentStatus,
+          occupation: occupation.trim(),
 
-            mobileNumber,
+          // Documents
+          incomeCertificateUrl:
+            incomeCertificateUrl.trim(),
 
-            // Address
-            address,
+          aadhaarDocumentUrl:
+            aadhaarDocumentUrl.trim(),
 
-            district,
-
-            state,
-
-            pinCode,
-
-            // Family / income
-            familyMembers: Number(familyMembers),
-
-            annualIncome: Number(annualIncome),
-
-            incomeCategory,
-
-            employmentStatus,
-
-            occupation,
-
-            // Documents
-            incomeCertificateUrl,
-
-            aadhaarDocumentUrl,
-
-            addressProofUrl,
-          }),
+          addressProofUrl:
+            addressProofUrl.trim(),
         }
       );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(
-          data.message ||
-            "Unable to submit housing application."
-        );
-
-        return;
-      }
 
       setSuccess(
         data.message ||
@@ -339,10 +349,11 @@ function ApplyScheme() {
       setAadhaarNumber("");
       setDateOfBirth("");
       setGender("");
-      setMobileNumber("");
+
+      // Keep registered mobile number
+      setMobileNumber(user?.phone || "");
 
       setAddress("");
-      setDistrict("");
       setState("");
       setPinCode("");
 
@@ -363,7 +374,6 @@ function ApplyScheme() {
       setTimeout(() => {
         navigate("/applicant/applications");
       }, 1500);
-
     } catch (error) {
       console.error(
         "Create application error:",
@@ -371,7 +381,8 @@ function ApplyScheme() {
       );
 
       setError(
-        "Unable to connect to the server. Please try again."
+        error.message ||
+          "Unable to submit housing application. Please try again."
       );
     } finally {
       setSubmitting(false);
@@ -402,7 +413,6 @@ function ApplyScheme() {
     return (
       <section className="min-h-screen bg-slate-50 py-10 px-4">
         <div className="max-w-2xl mx-auto">
-
           <Link
             to="/applicant/schemes"
             className="text-blue-600 hover:text-blue-800 font-medium"
@@ -413,7 +423,6 @@ function ApplyScheme() {
           <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl p-6 mt-6">
             {error || "Housing scheme not found."}
           </div>
-
         </div>
       </section>
     );
@@ -425,7 +434,6 @@ function ApplyScheme() {
 
   return (
     <section className="min-h-screen bg-slate-50 py-10 px-4">
-
       <div className="max-w-4xl mx-auto">
 
         {/* BACK */}
@@ -437,12 +445,9 @@ function ApplyScheme() {
           &larr; Back to Housing Schemes
         </Link>
 
-        {/* ==========================================
-            HEADER
-        ========================================== */}
+        {/* HEADER */}
 
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-5">
-
           <p className="text-sm text-blue-600 font-medium">
             Housing Application
           </p>
@@ -452,53 +457,32 @@ function ApplyScheme() {
           </h1>
 
           <p className="text-gray-500 mt-2">
-            Complete the following details to submit
-            your application.
+            Complete the following details to submit your
+            application.
           </p>
-
         </div>
 
-        {/* ==========================================
-            SELECTED SCHEME
-        ========================================== */}
+        {/* SELECTED SCHEME */}
 
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 mt-5">
+          <div>
+            <p className="text-sm text-blue-600 font-medium">
+              Selected Scheme
+            </p>
 
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <h2 className="text-xl font-semibold text-gray-800 mt-1">
+              {scheme.schemeName}
+            </h2>
 
-            <div>
-
-              <p className="text-sm text-blue-600 font-medium">
-                Selected Scheme
-              </p>
-
-              <h2 className="text-xl font-semibold text-gray-800 mt-1">
-                {scheme.schemeName}
-              </h2>
-
-              <p className="text-sm text-gray-600 mt-1">
-                {scheme.district}
-
-                {scheme.location
-                  ? ` · ${scheme.location}`
-                  : ""}
-              </p>
-
-            </div>
-
-            <span
-              className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                scheme.status === "OPEN"
-                  ? "bg-green-100 text-green-700"
-                  : "bg-gray-100 text-gray-600"
-              }`}
-            >
-              {scheme.status}
-            </span>
-
+            <p className="text-sm text-gray-600 mt-1">
+              {scheme.description || "Housing scheme"}
+            </p>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-5">
+          {/* ADMIN-ENTERED SCHEME DETAILS ONLY */}
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5">
+            {/* House Model */}
 
             <div>
               <p className="text-xs text-gray-500">
@@ -510,56 +494,67 @@ function ApplyScheme() {
               </p>
             </div>
 
+            {/* Price */}
+
             <div>
               <p className="text-xs text-gray-500">
                 Price
               </p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                ₹
-                {scheme.price !== undefined
-                  ? Number(
+                {scheme.price !== undefined &&
+                scheme.price !== null
+                  ? `₹${Number(
                       scheme.price
-                    ).toLocaleString("en-IN")
+                    ).toLocaleString("en-IN")}`
                   : "-"}
               </p>
             </div>
 
+            {/* Maximum Annual Income */}
+
             <div>
               <p className="text-xs text-gray-500">
-                Available Units
+                Maximum Annual Income
               </p>
 
-              <p
-                className={`font-semibold mt-1 ${
-                  Number(scheme.availableUnits) > 0
-                    ? "text-green-600"
-                    : "text-red-600"
-                }`}
-              >
-                {scheme.availableUnits ?? "-"}
+              <p className="font-semibold text-gray-800 mt-1">
+                {scheme.maximumAnnualIncome !==
+                  undefined &&
+                scheme.maximumAnnualIncome !== null
+                  ? `₹${Number(
+                      scheme.maximumAnnualIncome
+                    ).toLocaleString("en-IN")}`
+                  : "-"}
               </p>
             </div>
 
-          </div>
+            {/* Income Category */}
 
+            <div>
+              <p className="text-xs text-gray-500">
+                Eligible Categories
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {scheme.eligibleIncomeCategories?.length
+                  ? scheme.eligibleIncomeCategories.join(", ")
+                  : "-"}
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* ==========================================
-            APPLICATION FORM
-        ========================================== */}
+        {/* APPLICATION FORM */}
 
         <form
           onSubmit={handleSubmit}
           className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-5"
         >
 
-          {/* ==========================================
-              PERSONAL INFORMATION
-          ========================================== */}
+          {/* PERSONAL INFORMATION */}
 
           <div className="mb-8">
-
             <h2 className="text-lg font-semibold text-gray-800">
               Personal Information
             </h2>
@@ -574,7 +569,6 @@ function ApplyScheme() {
               {/* Aadhaar */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Aadhaar Number *
                 </label>
@@ -586,20 +580,21 @@ function ApplyScheme() {
                   value={aadhaarNumber}
                   onChange={(e) =>
                     setAadhaarNumber(
-                      e.target.value.replace(/\D/g, "")
+                      e.target.value.replace(
+                        /\D/g,
+                        ""
+                      )
                     )
                   }
                   placeholder="Enter 12-digit Aadhaar number"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
 
               {/* Date of Birth */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Date of Birth *
                 </label>
@@ -613,13 +608,11 @@ function ApplyScheme() {
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
 
               {/* Gender */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Gender *
                 </label>
@@ -632,7 +625,6 @@ function ApplyScheme() {
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-
                   <option value="">
                     Select gender
                   </option>
@@ -648,45 +640,40 @@ function ApplyScheme() {
                   <option value="OTHER">
                     Other
                   </option>
-
                 </select>
-
               </div>
 
               {/* Mobile */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Mobile Number *
                 </label>
 
                 <input
                   type="tel"
+                  inputMode="numeric"
                   maxLength="10"
                   value={mobileNumber}
                   onChange={(e) =>
                     setMobileNumber(
-                      e.target.value.replace(/\D/g, "")
+                      e.target.value.replace(
+                        /\D/g,
+                        ""
+                      )
                     )
                   }
                   placeholder="Enter 10-digit mobile number"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
-
             </div>
-
           </div>
 
-          {/* ==========================================
-              ADDRESS
-          ========================================== */}
+          {/* ADDRESS */}
 
           <div className="border-t border-gray-100 pt-6 mb-8">
-
             <h2 className="text-lg font-semibold text-gray-800">
               Address Information
             </h2>
@@ -695,10 +682,7 @@ function ApplyScheme() {
               Enter your current residential address.
             </p>
 
-            {/* Address */}
-
             <div className="mb-5">
-
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Full Address *
               </label>
@@ -713,15 +697,13 @@ function ApplyScheme() {
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 required
               />
-
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
 
-              {/* District */}
+              {/* REGISTERED DISTRICT */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   District *
                 </label>
@@ -729,20 +711,18 @@ function ApplyScheme() {
                 <input
                   type="text"
                   value={district}
-                  onChange={(e) =>
-                    setDistrict(e.target.value)
-                  }
-                  placeholder="District"
-                  className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
-                  required
+                  readOnly
+                  className="w-full border border-gray-300 bg-gray-100 text-gray-700 rounded-lg px-4 py-3 outline-none cursor-not-allowed"
                 />
 
+                <p className="text-xs text-gray-500 mt-1">
+                  Taken from your registered profile.
+                </p>
               </div>
 
               {/* State */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   State *
                 </label>
@@ -757,13 +737,11 @@ function ApplyScheme() {
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
 
               {/* PIN */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   PIN Code *
                 </label>
@@ -775,26 +753,23 @@ function ApplyScheme() {
                   value={pinCode}
                   onChange={(e) =>
                     setPinCode(
-                      e.target.value.replace(/\D/g, "")
+                      e.target.value.replace(
+                        /\D/g,
+                        ""
+                      )
                     )
                   }
                   placeholder="6-digit PIN"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
-
             </div>
-
           </div>
 
-          {/* ==========================================
-              FAMILY AND INCOME
-          ========================================== */}
+          {/* FAMILY AND INCOME */}
 
           <div className="border-t border-gray-100 pt-6 mb-8">
-
             <h2 className="text-lg font-semibold text-gray-800">
               Family & Income Information
             </h2>
@@ -809,7 +784,6 @@ function ApplyScheme() {
               {/* Family Members */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Number of Family Members *
                 </label>
@@ -819,19 +793,19 @@ function ApplyScheme() {
                   min="1"
                   value={familyMembers}
                   onChange={(e) =>
-                    setFamilyMembers(e.target.value)
+                    setFamilyMembers(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter family members"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
 
               {/* Annual Income */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Annual Family Income *
                 </label>
@@ -841,19 +815,19 @@ function ApplyScheme() {
                   min="0"
                   value={annualIncome}
                   onChange={(e) =>
-                    setAnnualIncome(e.target.value)
+                    setAnnualIncome(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter annual income"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
 
               {/* Income Category */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Income Category *
                 </label>
@@ -861,12 +835,13 @@ function ApplyScheme() {
                 <select
                   value={incomeCategory}
                   onChange={(e) =>
-                    setIncomeCategory(e.target.value)
+                    setIncomeCategory(
+                      e.target.value
+                    )
                   }
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-
                   <option value="">
                     Select income category
                   </option>
@@ -886,15 +861,12 @@ function ApplyScheme() {
                   <option value="HIG">
                     HIG
                   </option>
-
                 </select>
-
               </div>
 
               {/* Occupation */}
 
               <div>
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Occupation *
                 </label>
@@ -903,19 +875,19 @@ function ApplyScheme() {
                   type="text"
                   value={occupation}
                   onChange={(e) =>
-                    setOccupation(e.target.value)
+                    setOccupation(
+                      e.target.value
+                    )
                   }
                   placeholder="Enter occupation"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
-
               </div>
 
               {/* Employment */}
 
               <div className="md:col-span-2">
-
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Employment Status *
                 </label>
@@ -923,12 +895,13 @@ function ApplyScheme() {
                 <select
                   value={employmentStatus}
                   onChange={(e) =>
-                    setEmploymentStatus(e.target.value)
+                    setEmploymentStatus(
+                      e.target.value
+                    )
                   }
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-
                   <option value="">
                     Select employment status
                   </option>
@@ -952,21 +925,14 @@ function ApplyScheme() {
                   <option value="OTHER">
                     Other
                   </option>
-
                 </select>
-
               </div>
-
             </div>
-
           </div>
 
-          {/* ==========================================
-              DOCUMENTS
-          ========================================== */}
+          {/* DOCUMENTS */}
 
           <div className="border-t border-gray-100 pt-6 mb-8">
-
             <h2 className="text-lg font-semibold text-gray-800">
               Supporting Documents
             </h2>
@@ -979,7 +945,6 @@ function ApplyScheme() {
             {/* Income Certificate */}
 
             <div className="mb-5">
-
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Income Certificate Link *
               </label>
@@ -1001,13 +966,11 @@ function ApplyScheme() {
                 Upload your income certificate to Google
                 Drive and paste the shareable link here.
               </p>
-
             </div>
 
             {/* Aadhaar Document */}
 
             <div className="mb-5">
-
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Aadhaar Document Link *
               </label>
@@ -1024,13 +987,11 @@ function ApplyScheme() {
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
-
             </div>
 
             {/* Address Proof */}
 
             <div>
-
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Address Proof Link *
               </label>
@@ -1047,14 +1008,10 @@ function ApplyScheme() {
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
-
             </div>
-
           </div>
 
-          {/* ==========================================
-              ERROR
-          ========================================== */}
+          {/* ERROR */}
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 rounded-lg p-4 mb-5 text-sm">
@@ -1062,9 +1019,7 @@ function ApplyScheme() {
             </div>
           )}
 
-          {/* ==========================================
-              SUCCESS
-          ========================================== */}
+          {/* SUCCESS */}
 
           {success && (
             <div className="bg-green-50 border border-green-200 text-green-600 rounded-lg p-4 mb-5 text-sm">
@@ -1072,49 +1027,34 @@ function ApplyScheme() {
             </div>
           )}
 
-          {/* ==========================================
-              DECLARATION
-          ========================================== */}
+          {/* DECLARATION */}
 
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
-
             <p className="text-sm text-gray-600">
               I confirm that all information and documents
               provided in this application are true and
-              correct. I understand that the Housing Board
-              may verify my identity, income, address,
-              employment and supporting documents before
-              considering my application for allotment.
+              correct. I understand that the Housing Board may
+              verify my identity, income, address, employment
+              and supporting documents before considering my
+              application for allotment.
             </p>
-
           </div>
 
-          {/* ==========================================
-              SUBMIT
-          ========================================== */}
+          {/* SUBMIT */}
 
           <button
             type="submit"
-            disabled={
-              submitting ||
-              scheme.status !== "OPEN" ||
-              Number(scheme.availableUnits) <= 0
-            }
+            disabled={submitting || !district}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:bg-blue-300 disabled:cursor-not-allowed"
           >
             {submitting
               ? "Submitting Application..."
-              : scheme.status !== "OPEN"
-              ? "Applications Closed"
-              : Number(scheme.availableUnits) <= 0
-              ? "No Houses Available"
+              : !district
+              ? "District Not Available"
               : "Submit Housing Application"}
           </button>
-
         </form>
-
       </div>
-
     </section>
   );
 }

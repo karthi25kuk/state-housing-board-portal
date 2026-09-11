@@ -11,11 +11,11 @@ const allowRoles = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-// ==========================================
+// ======================================================
 // OFFICER APPLICATION ROUTES
-// ==========================================
+// ======================================================
 
-// Get applications for officer's schemes
+// Get applications from officer's district
 router.get(
   "/",
   protect,
@@ -23,7 +23,7 @@ router.get(
   getOfficerApplications
 );
 
-// Get single application
+// Get single application from officer's district
 router.get(
   "/:applicationId",
   protect,
@@ -31,10 +31,7 @@ router.get(
   getOfficerApplicationById
 );
 
-// ==========================================
-// VERIFY APPLICATION
-// ==========================================
-
+// Verify application
 router.patch(
   "/:applicationId/verify",
   protect,

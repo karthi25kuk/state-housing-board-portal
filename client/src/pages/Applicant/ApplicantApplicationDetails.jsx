@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { getMyApplicationById } from "../../services/applicationService";
 
 function ApplicantApplicationDetails() {
   const { applicationId } = useParams();
@@ -8,9 +9,16 @@ function ApplicantApplicationDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // ==========================================
+  // FETCH APPLICATION
+  // ==========================================
+
   useEffect(() => {
     const fetchApplication = async () => {
       try {
+        setLoading(true);
+        setError("");
+
         const token = localStorage.getItem("token");
 
         if (!token) {
@@ -18,45 +26,56 @@ function ApplicantApplicationDetails() {
           return;
         }
 
-        const response = await fetch(
-          `http://localhost:5000/api/applications/${applicationId}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          setError(
-            data.message || "Failed to load application details."
-          );
+        if (!applicationId) {
+          setError("Invalid application ID.");
           return;
         }
 
-        setApplication(data.application);
+        const data = await getMyApplicationById(
+          token,
+          applicationId
+        );
+
+        if (!data) {
+          setError("Application not found.");
+          return;
+        }
+
+        setApplication(data);
       } catch (error) {
         console.error("Fetch application error:", error);
 
         setError(
-          "Unable to connect to the server. Please try again."
+          error.message ||
+            "Unable to load application details. Please try again."
         );
       } finally {
         setLoading(false);
       }
     };
 
-    if (applicationId) {
-      fetchApplication();
-    } else {
-      setError("Invalid application ID.");
-      setLoading(false);
-    }
+    fetchApplication();
   }, [applicationId]);
+
+  // ==========================================
+  // FORMAT DATE
+  // ==========================================
+
+  const formatDate = (date, includeTime = false) => {
+    if (!date) return "-";
+
+    return new Date(date).toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      ...(includeTime
+        ? {
+            hour: "2-digit",
+            minute: "2-digit",
+          }
+        : {}),
+    });
+  };
 
   // ==========================================
   // LOADING
@@ -99,6 +118,10 @@ function ApplicantApplicationDetails() {
     );
   }
 
+  // ==========================================
+  // APPLICATION NOT FOUND
+  // ==========================================
+
   if (!application) {
     return (
       <div className="min-h-screen bg-slate-50 p-6">
@@ -124,35 +147,39 @@ function ApplicantApplicationDetails() {
 
   const scheme = application.schemeId;
 
+  // ==========================================
+  // APPLICATION STATUS
+  // ==========================================
+
   const statusStyles = {
     SUBMITTED: "bg-yellow-100 text-yellow-700",
+    UNDER_VERIFICATION: "bg-blue-100 text-blue-700",
     ELIGIBLE: "bg-green-100 text-green-700",
-    WAITING_LIST: "bg-purple-100 text-purple-700",
-    ALLOTMENT_OFFERED: "bg-blue-100 text-blue-700",
-    ACCEPTED: "bg-green-100 text-green-700",
     REJECTED: "bg-red-100 text-red-700",
-    CANCELLED: "bg-gray-100 text-gray-600",
+    WITHDRAWN: "bg-gray-100 text-gray-600",
   };
 
   const statusLabels = {
     SUBMITTED: "Submitted",
+    UNDER_VERIFICATION: "Under Verification",
     ELIGIBLE: "Eligible",
-    WAITING_LIST: "Waiting List",
-    ALLOTMENT_OFFERED: "Allotment Offered",
-    ACCEPTED: "Accepted",
     REJECTED: "Rejected",
-    CANCELLED: "Cancelled",
+    WITHDRAWN: "Withdrawn",
   };
 
-  const status =
-    application.status || "SUBMITTED";
+  const status = application.status || "SUBMITTED";
+
+  // ==========================================
+  // PAGE
+  // ==========================================
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
 
       <div className="max-w-4xl mx-auto">
 
-        {/* Back */}
+        {/* BACK */}
+
         <Link
           to="/applicant/applications"
           className="text-blue-600 hover:text-blue-800 font-medium"
@@ -160,7 +187,8 @@ function ApplicantApplicationDetails() {
           &larr; Back to My Applications
         </Link>
 
-        {/* Header */}
+        {/* HEADER */}
+
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-5">
 
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -172,7 +200,7 @@ function ApplicantApplicationDetails() {
               </p>
 
               <h1 className="text-2xl font-bold text-gray-800 mt-1">
-                {application.applicationNumber}
+                {application.applicationNumber || "-"}
               </h1>
 
               <p className="text-gray-500 mt-2">
@@ -194,7 +222,10 @@ function ApplicantApplicationDetails() {
 
         </div>
 
-        {/* Scheme Details */}
+        {/* ==========================================
+            HOUSING SCHEME
+        ========================================== */}
+
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-5">
 
           <h2 className="text-lg font-semibold text-gray-800 mb-5">
@@ -202,6 +233,8 @@ function ApplicantApplicationDetails() {
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+            {/* Scheme Name */}
 
             <div>
               <p className="text-sm text-gray-500">
@@ -213,25 +246,19 @@ function ApplicantApplicationDetails() {
               </p>
             </div>
 
+            {/* District */}
+
             <div>
               <p className="text-sm text-gray-500">
                 District
               </p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                {scheme?.district || "-"}
+                {application.district || "-"}
               </p>
             </div>
 
-            <div>
-              <p className="text-sm text-gray-500">
-                Location
-              </p>
-
-              <p className="font-semibold text-gray-800 mt-1">
-                {scheme?.location || "-"}
-              </p>
-            </div>
+            {/* House Model */}
 
             <div>
               <p className="text-sm text-gray-500">
@@ -242,6 +269,8 @@ function ApplicantApplicationDetails() {
                 {scheme?.houseModel || "-"}
               </p>
             </div>
+
+            {/* Price */}
 
             <div>
               <p className="text-sm text-gray-500">
@@ -261,55 +290,63 @@ function ApplicantApplicationDetails() {
 
         </div>
 
-        {/* Applicant Information */}
+        {/* ==========================================
+            PERSONAL INFORMATION
+        ========================================== */}
+
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-5">
 
           <h2 className="text-lg font-semibold text-gray-800 mb-5">
-            Application Information
+            Personal Information
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
 
+            {/* Aadhaar */}
+
             <div>
               <p className="text-sm text-gray-500">
-                Family Members
+                Aadhaar Number
               </p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                {application.familyMembers}
+                {application.aadhaarNumber || "-"}
               </p>
             </div>
 
+            {/* Date of Birth */}
+
             <div>
               <p className="text-sm text-gray-500">
-                Annual Income
+                Date of Birth
               </p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                ₹
-                {Number(
-                  application.annualIncome
-                ).toLocaleString("en-IN")}
+                {formatDate(application.dateOfBirth)}
               </p>
             </div>
 
+            {/* Gender */}
+
             <div>
               <p className="text-sm text-gray-500">
-                Income Category
+                Gender
               </p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                {application.incomeCategory}
+                {application.gender || "-"}
               </p>
             </div>
 
+            {/* Mobile */}
+
             <div>
               <p className="text-sm text-gray-500">
-                Employment Status
+                Mobile Number
               </p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                {application.employmentStatus}
+                {application.mobileNumber || "-"}
               </p>
             </div>
 
@@ -317,14 +354,276 @@ function ApplicantApplicationDetails() {
 
         </div>
 
-        {/* Submission Information */}
+        {/* ==========================================
+            ADDRESS INFORMATION
+        ========================================== */}
+
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-5">
 
           <h2 className="text-lg font-semibold text-gray-800 mb-5">
-            Submission Information
+            Address Information
+          </h2>
+
+          <div className="space-y-5">
+
+            {/* Address */}
+
+            <div>
+              <p className="text-sm text-gray-500">
+                Address
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {application.address || "-"}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+
+              {/* District */}
+
+              <div>
+                <p className="text-sm text-gray-500">
+                  District
+                </p>
+
+                <p className="font-semibold text-gray-800 mt-1">
+                  {application.district || "-"}
+                </p>
+              </div>
+
+              {/* State */}
+
+              <div>
+                <p className="text-sm text-gray-500">
+                  State
+                </p>
+
+                <p className="font-semibold text-gray-800 mt-1">
+                  {application.state || "-"}
+                </p>
+              </div>
+
+              {/* PIN */}
+
+              <div>
+                <p className="text-sm text-gray-500">
+                  PIN Code
+                </p>
+
+                <p className="font-semibold text-gray-800 mt-1">
+                  {application.pinCode || "-"}
+                </p>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* ==========================================
+            FAMILY / INCOME
+        ========================================== */}
+
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-5">
+
+          <h2 className="text-lg font-semibold text-gray-800 mb-5">
+            Family & Income Information
           </h2>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+            {/* Family Members */}
+
+            <div>
+              <p className="text-sm text-gray-500">
+                Family Members
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {application.familyMembers ?? "-"}
+              </p>
+            </div>
+
+            {/* Annual Income */}
+
+            <div>
+              <p className="text-sm text-gray-500">
+                Annual Income
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {application.annualIncome !== undefined
+                  ? `₹${Number(
+                      application.annualIncome
+                    ).toLocaleString("en-IN")}`
+                  : "-"}
+              </p>
+            </div>
+
+            {/* Income Category */}
+
+            <div>
+              <p className="text-sm text-gray-500">
+                Income Category
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {application.incomeCategory || "-"}
+              </p>
+            </div>
+
+            {/* Employment */}
+
+            <div>
+              <p className="text-sm text-gray-500">
+                Employment Status
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {application.employmentStatus || "-"}
+              </p>
+            </div>
+
+            {/* Occupation */}
+
+            <div>
+              <p className="text-sm text-gray-500">
+                Occupation
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {application.occupation || "-"}
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* ==========================================
+            DOCUMENTS
+        ========================================== */}
+
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-5">
+
+          <h2 className="text-lg font-semibold text-gray-800 mb-5">
+            Supporting Documents
+          </h2>
+
+          <div className="space-y-4">
+
+            {/* Income Certificate */}
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-gray-100 rounded-lg p-4">
+
+              <div>
+                <p className="font-medium text-gray-800">
+                  Income Certificate
+                </p>
+
+                <p className="text-xs text-gray-500 mt-1">
+                  Submitted document
+                </p>
+              </div>
+
+              {application.incomeCertificateUrl ? (
+                <a
+                  href={application.incomeCertificateUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  View Document
+                </a>
+              ) : (
+                <span className="text-sm text-gray-400">
+                  Not provided
+                </span>
+              )}
+
+            </div>
+
+            {/* Aadhaar Document */}
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-gray-100 rounded-lg p-4">
+
+              <div>
+                <p className="font-medium text-gray-800">
+                  Aadhaar Document
+                </p>
+
+                <p className="text-xs text-gray-500 mt-1">
+                  Submitted document
+                </p>
+              </div>
+
+              {application.aadhaarDocumentUrl ? (
+                <a
+                  href={application.aadhaarDocumentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  View Document
+                </a>
+              ) : (
+                <span className="text-sm text-gray-400">
+                  Not provided
+                </span>
+              )}
+
+            </div>
+
+            {/* Address Proof */}
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-gray-100 rounded-lg p-4">
+
+              <div>
+                <p className="font-medium text-gray-800">
+                  Address Proof
+                </p>
+
+                <p className="text-xs text-gray-500 mt-1">
+                  Submitted document
+                </p>
+              </div>
+
+              {application.addressProofUrl ? (
+                <a
+                  href={application.addressProofUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                >
+                  View Document
+                </a>
+              ) : (
+                <span className="text-sm text-gray-400">
+                  Not provided
+                </span>
+              )}
+
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* ==========================================
+            SUBMISSION / VERIFICATION
+        ========================================== */}
+
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mt-5">
+
+          <h2 className="text-lg font-semibold text-gray-800 mb-5">
+            Submission & Verification
+          </h2>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+            {/* Application Number */}
 
             <div>
               <p className="text-sm text-gray-500">
@@ -332,9 +631,11 @@ function ApplicantApplicationDetails() {
               </p>
 
               <p className="font-mono text-sm text-gray-800 mt-1">
-                {application.applicationNumber}
+                {application.applicationNumber || "-"}
               </p>
             </div>
+
+            {/* Submitted */}
 
             <div>
               <p className="text-sm text-gray-500">
@@ -342,13 +643,11 @@ function ApplicantApplicationDetails() {
               </p>
 
               <p className="font-medium text-gray-800 mt-1">
-                {application.submittedAt
-                  ? new Date(
-                      application.submittedAt
-                    ).toLocaleString("en-IN")
-                  : "-"}
+                {formatDate(application.submittedAt, true)}
               </p>
             </div>
+
+            {/* Verified */}
 
             <div>
               <p className="text-sm text-gray-500">
@@ -357,12 +656,12 @@ function ApplicantApplicationDetails() {
 
               <p className="font-medium text-gray-800 mt-1">
                 {application.verifiedAt
-                  ? new Date(
-                      application.verifiedAt
-                    ).toLocaleString("en-IN")
+                  ? formatDate(application.verifiedAt, true)
                   : "Not verified yet"}
               </p>
             </div>
+
+            {/* Verification Remarks */}
 
             <div>
               <p className="text-sm text-gray-500">
@@ -380,7 +679,6 @@ function ApplicantApplicationDetails() {
         </div>
 
       </div>
-
     </div>
   );
 }

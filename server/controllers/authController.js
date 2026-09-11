@@ -12,12 +12,20 @@ const register = async (req, res) => {
       name,
       email,
       phone,
+      district,
       password,
       confirmPassword,
     } = req.body;
 
     // Check required fields
-    if (!name || !email || !phone || !password || !confirmPassword) {
+    if (
+      !name ||
+      !email ||
+      !phone ||
+      !district ||
+      !password ||
+      !confirmPassword
+    ) {
       return res.status(400).json({
         message: "Please fill in all required fields.",
       });
@@ -30,9 +38,16 @@ const register = async (req, res) => {
       });
     }
 
+    // Check Indian mobile number
+    if (!/^[6-9]\d{9}$/.test(phone.trim())) {
+      return res.status(400).json({
+        message: "Please enter a valid 10-digit Indian mobile number.",
+      });
+    }
+
     // Check existing user
     const existingUser = await User.findOne({
-      email: email.toLowerCase(),
+      email: email.toLowerCase().trim(),
     });
 
     if (existingUser) {
@@ -46,9 +61,13 @@ const register = async (req, res) => {
 
     // Create applicant account
     const user = await User.create({
-      name,
-      email: email.toLowerCase(),
-      phone,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
+      phone: phone.trim(),
+
+      // Applicant's registered residential district
+      district: district.trim(),
+
       password: hashedPassword,
       role: "APPLICANT",
       housingStatus: "NOT_ALLOTTED",
@@ -57,11 +76,15 @@ const register = async (req, res) => {
 
     res.status(201).json({
       message: "Account created successfully.",
+
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
+        district: user.district,
         role: user.role,
+        housingStatus: user.housingStatus,
       },
     });
   } catch (error) {
@@ -72,7 +95,6 @@ const register = async (req, res) => {
     });
   }
 };
-
 
 // ==========================================
 // LOGIN
@@ -91,7 +113,7 @@ const login = async (req, res) => {
 
     // Find user
     const user = await User.findOne({
-      email: email.toLowerCase(),
+      email: email.toLowerCase().trim(),
     });
 
     if (!user) {
@@ -141,6 +163,7 @@ const login = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
         role: user.role,
         district: user.district,
         housingStatus: user.housingStatus,
@@ -154,7 +177,6 @@ const login = async (req, res) => {
     });
   }
 };
-
 
 module.exports = {
   register,

@@ -7,15 +7,17 @@ const {
   approveRanking,
 } = require("../controllers/waitingListController");
 
-const protect = require("../middleware/authMiddleware");
-const allowRoles = require("../middleware/roleMiddleware");
+const protect =
+  require("../middleware/authMiddleware");
 
-const router = express.Router();
+const allowRoles =
+  require("../middleware/roleMiddleware");
 
-// ==========================================
-// APPLICANT
-// ==========================================
+const router =
+  express.Router();
 
+
+// Applicant
 router.get(
   "/my",
   protect,
@@ -23,11 +25,8 @@ router.get(
   getMyWaitingLists
 );
 
-// ==========================================
-// OFFICER
-// ==========================================
 
-// View waiting list for officer's schemes
+// Officer
 router.get(
   "/officer",
   protect,
@@ -35,7 +34,8 @@ router.get(
   getOfficerWaitingList
 );
 
-// Generate the waiting-list ranking after the application period closes
+
+// Generate ranking
 router.post(
   "/:schemeId/generate",
   protect,
@@ -43,12 +43,14 @@ router.post(
   generateRanking
 );
 
-// Approve the generated waiting-list ranking
+
+// Approve ranking
 router.patch(
   "/:schemeId/approve",
   protect,
   allowRoles("OFFICER"),
   approveRanking
 );
+
 
 module.exports = router;

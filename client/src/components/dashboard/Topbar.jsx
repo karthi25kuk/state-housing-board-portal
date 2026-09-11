@@ -1,25 +1,12 @@
 import { FaSearch, FaBell, FaUserCircle } from "react-icons/fa";
 import { Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 
 function Topbar() {
-  // Get logged-in user from localStorage
-  const storedUser = localStorage.getItem("user");
+  const { user } = useAuth();
 
-  let user = {};
-
-  try {
-    user = storedUser ? JSON.parse(storedUser) : {};
-  } catch (error) {
-    console.error("User data error:", error);
-  }
-
-  const userName =
-    user?.name ||
-    user?.fullName ||
-    "User";
-
-  const userRole =
-    user?.role || "Applicant";
+  const userName = user?.name || "User";
+  const userRole = user?.role || "APPLICANT";
 
   // Make role look cleaner
   const displayRole =
@@ -28,7 +15,6 @@ function Topbar() {
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
-
       <div className="flex items-center justify-between gap-6">
 
         {/* Page Title */}
@@ -42,13 +28,11 @@ function Topbar() {
           </p>
         </div>
 
-
         {/* Right Section */}
         <div className="flex items-center gap-5">
 
           {/* Search */}
           <div className="hidden md:flex items-center border border-gray-200 rounded-lg px-3 py-2">
-
             <FaSearch className="text-gray-400 mr-2" />
 
             <input
@@ -56,9 +40,7 @@ function Topbar() {
               placeholder="Search..."
               className="w-40 outline-none text-sm text-gray-700"
             />
-
           </div>
-
 
           {/* Notifications */}
           <Link
@@ -66,16 +48,8 @@ function Topbar() {
             className="relative text-gray-500 hover:text-blue-600 transition"
             title="Notifications"
           >
-
             <FaBell size={20} />
-
-            {/* Notification count */}
-            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-              3
-            </span>
-
           </Link>
-
 
           {/* Profile */}
           <Link
@@ -83,14 +57,12 @@ function Topbar() {
             className="flex items-center gap-2"
             title="Profile"
           >
-
             <FaUserCircle
               size={32}
               className="text-gray-400"
             />
 
             <div className="hidden sm:block">
-
               <p className="text-sm font-medium text-gray-800">
                 {userName}
               </p>
@@ -98,15 +70,11 @@ function Topbar() {
               <p className="text-xs text-gray-500">
                 {displayRole}
               </p>
-
             </div>
-
           </Link>
 
         </div>
-
       </div>
-
     </header>
   );
 }

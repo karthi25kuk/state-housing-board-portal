@@ -1,25 +1,124 @@
-import { createContext, useContext, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+} from "react";
 
 const AuthContext = createContext();
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const storedUser = localStorage.getItem("user");
+// ======================================================
+// AUTH PROVIDER
+// ======================================================
 
-    return storedUser ? JSON.parse(storedUser) : null;
+export function AuthProvider({ children }) {
+  // ====================================================
+  // USER
+  // ====================================================
+
+  const [user, setUser] = useState(() => {
+    try {
+      const storedUser =
+        localStorage.getItem("user");
+
+      return storedUser
+        ? JSON.parse(storedUser)
+        : null;
+    } catch (error) {
+      console.error(
+        "Failed to load stored user:",
+        error
+      );
+
+      localStorage.removeItem("user");
+
+      return null;
+    }
   });
+
+  // ====================================================
+  // TOKEN
+  // ====================================================
 
   const [token, setToken] = useState(() => {
     return localStorage.getItem("token");
   });
 
+  // ====================================================
+  // LOGIN
+  // ====================================================
+  //
+  // Backend response:
+  //
+  // {
+  //   token,
+  //   user: {
+  //     id,
+  //     name,
+  //     email,
+  //     role,
+  //     district,
+  //     housingStatus
+  //   }
+  // }
+  //
+  // ====================================================
+
   const login = (userData, userToken) => {
-    localStorage.setItem("user", JSON.stringify(userData));
-    localStorage.setItem("token", userToken);
+    if (!userData || !userToken) {
+      return;
+    }
+
+    localStorage.setItem(
+      "user",
+      JSON.stringify(userData)
+    );
+
+    localStorage.setItem(
+      "token",
+      userToken
+    );
 
     setUser(userData);
     setToken(userToken);
   };
+
+  // ====================================================
+  // UPDATE USER
+  // ====================================================
+  //
+  // Useful when user information changes without
+  // requiring another login.
+  //
+  // Example:
+  //
+  // housingStatus:
+  // NOT_ALLOTTED -> ALLOTTED
+  //
+  // ====================================================
+
+  const updateUser = (updatedData) => {
+    setUser((currentUser) => {
+      if (!currentUser) {
+        return updatedData;
+      }
+
+      const updatedUser = {
+        ...currentUser,
+        ...updatedData,
+      };
+
+      localStorage.setItem(
+        "user",
+        JSON.stringify(updatedUser)
+      );
+
+      return updatedUser;
+    });
+  };
+
+  // ====================================================
+  // LOGOUT
+  // ====================================================
 
   const logout = () => {
     localStorage.removeItem("user");
@@ -29,7 +128,16 @@ export function AuthProvider({ children }) {
     setToken(null);
   };
 
-  const isAuthenticated = !!token && !!user;
+  // ====================================================
+  // AUTHENTICATION STATUS
+  // ====================================================
+
+  const isAuthenticated =
+    !!token && !!user;
+
+  // ====================================================
+  // CONTEXT
+  // ====================================================
 
   return (
     <AuthContext.Provider
@@ -39,12 +147,17 @@ export function AuthProvider({ children }) {
         isAuthenticated,
         login,
         logout,
+        updateUser,
       }}
     >
       {children}
     </AuthContext.Provider>
   );
 }
+
+// ======================================================
+// USE AUTH
+// ======================================================
 
 export function useAuth() {
   return useContext(AuthContext);

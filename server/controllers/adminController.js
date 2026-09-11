@@ -1,10 +1,25 @@
+const bcrypt = require("bcryptjs");
+
 const HousingScheme = require("../models/HousingScheme");
 const User = require("../models/User");
 const Application = require("../models/Application");
 const Allotment = require("../models/Allotment");
+const WaitingList = require("../models/WaitingList");
 
 // ======================================================
 // CREATE HOUSING SCHEME
+// ======================================================
+//
+// Admin creates ONLY the common scheme details.
+//
+// Admin does NOT create:
+// - District configuration
+// - Officer assignment
+// - Location
+// - Number of units
+// - Allotment date
+//
+// Officers configure operational housing details later.
 // ======================================================
 
 const createScheme = async (req, res) => {
@@ -21,7 +36,7 @@ const createScheme = async (req, res) => {
     } = req.body;
 
     // ==================================================
-    // VALIDATE REQUIRED FIELDS
+    // REQUIRED FIELDS
     // ==================================================
 
     if (
@@ -39,8 +54,45 @@ const createScheme = async (req, res) => {
     }
 
     // ==================================================
-    // VALIDATE INCOME CATEGORIES
+    // STRING VALIDATION
     // ==================================================
+
+    if (
+      typeof schemeName !== "string" ||
+      typeof description !== "string" ||
+      typeof houseModel !== "string"
+    ) {
+      return res.status(400).json({
+        message:
+          "Scheme name, description and house model must be text values.",
+      });
+    }
+
+    const normalizedSchemeName = schemeName.trim();
+    const normalizedDescription = description.trim();
+    const normalizedHouseModel = houseModel.trim();
+
+    if (
+      !normalizedSchemeName ||
+      !normalizedDescription ||
+      !normalizedHouseModel
+    ) {
+      return res.status(400).json({
+        message:
+          "Scheme name, description and house model cannot be empty.",
+      });
+    }
+
+    // ==================================================
+    // INCOME CATEGORIES
+    // ==================================================
+
+    const allowedCategories = [
+      "EWS",
+      "LIG",
+      "MIG",
+      "HIG",
+    ];
 
     if (
       !Array.isArray(eligibleIncomeCategories) ||
@@ -52,18 +104,17 @@ const createScheme = async (req, res) => {
       });
     }
 
-    const allowedCategories = [
-      "EWS",
-      "LIG",
-      "MIG",
-      "HIG",
+    const uniqueCategories = [
+      ...new Set(
+        eligibleIncomeCategories.map((category) =>
+          String(category).trim().toUpperCase()
+        )
+      ),
     ];
 
-    const invalidCategory =
-      eligibleIncomeCategories.some(
-        (category) =>
-          !allowedCategories.includes(category)
-      );
+    const invalidCategory = uniqueCategories.some(
+      (category) => !allowedCategories.includes(category)
+    );
 
     if (invalidCategory) {
       return res.status(400).json({
@@ -73,14 +124,13 @@ const createScheme = async (req, res) => {
     }
 
     // ==================================================
-    // VALIDATE INCOME
+    // MAXIMUM ANNUAL INCOME
     // ==================================================
 
-    const parsedMaximumIncome =
-      Number(maximumAnnualIncome);
+    const parsedMaximumIncome = Number(maximumAnnualIncome);
 
     if (
-      Number.isNaN(parsedMaximumIncome) ||
+      !Number.isFinite(parsedMaximumIncome) ||
       parsedMaximumIncome < 0
     ) {
       return res.status(400).json({
@@ -90,13 +140,13 @@ const createScheme = async (req, res) => {
     }
 
     // ==================================================
-    // VALIDATE PRICE
+    // HOUSE PRICE
     // ==================================================
 
     const parsedPrice = Number(price);
 
     if (
-      Number.isNaN(parsedPrice) ||
+      !Number.isFinite(parsedPrice) ||
       parsedPrice < 0
     ) {
       return res.status(400).json({
@@ -106,41 +156,54 @@ const createScheme = async (req, res) => {
     }
 
     // ==================================================
-    // CREATE SCHEME
+    // DUPLICATE SCHEME NAME
+    // ==================================================
+
+    const existingScheme = await HousingScheme.findOne({
+      schemeName: normalizedSchemeName,
+    });
+
+    if (existingScheme) {
+      return res.status(409).json({
+        message:
+          "A housing scheme with this name already exists.",
+      });
+    }
+
+    // ==================================================
+    // CREATE COMMON SCHEME
     // ==================================================
 
     const scheme = await HousingScheme.create({
-      schemeName: schemeName.trim(),
-
-      description: description.trim(),
-
-      eligibleIncomeCategories,
-
-      maximumAnnualIncome:
-        parsedMaximumIncome,
-
-      houseModel: houseModel.trim(),
-
+      schemeName: normalizedSchemeName,
+      description: normalizedDescription,
+      eligibleIncomeCategories: uniqueCategories,
+      maximumAnnualIncome: parsedMaximumIncome,
+      houseModel: normalizedHouseModel,
       price: parsedPrice,
-
-      status: "UPCOMING",
-
+      configurations: [],
       createdBy: adminId,
     });
 
-    res.status(201).json({
-      message:
-        "Housing scheme created successfully.",
+    // ==================================================
+    // RESPONSE
+    // ==================================================
 
+    return res.status(201).json({
+      message: "Housing scheme created successfully.",
       scheme,
     });
   } catch (error) {
-    console.error(
-      "Create scheme error:",
-      error
-    );
+    console.error("Create scheme error:", error);
 
-    res.status(500).json({
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message:
+          "A housing scheme with these details already exists.",
+      });
+    }
+
+    return res.status(500).json({
       message:
         "Server error while creating housing scheme.",
     });
@@ -149,6 +212,13 @@ const createScheme = async (req, res) => {
 
 // ======================================================
 // CREATE OFFICER
+// ======================================================
+//
+// Only ADMIN can create officers.
+//
+// Each officer belongs to exactly one district.
+// The officer can later configure schemes for that
+// district.
 // ======================================================
 
 const createOfficer = async (req, res) => {
@@ -163,7 +233,7 @@ const createOfficer = async (req, res) => {
     } = req.body;
 
     // ==================================================
-    // VALIDATE REQUIRED FIELDS
+    // REQUIRED FIELDS
     // ==================================================
 
     if (
@@ -181,7 +251,58 @@ const createOfficer = async (req, res) => {
     }
 
     // ==================================================
-    // VALIDATE PASSWORD
+    // NORMALIZE VALUES
+    // ==================================================
+
+    const normalizedName = String(name).trim();
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedPhone = String(phone).trim();
+    const normalizedDistrict = String(district).trim();
+
+    // ==================================================
+    // BASIC VALIDATION
+    // ==================================================
+
+    if (
+      !normalizedName ||
+      !normalizedEmail ||
+      !normalizedPhone ||
+      !normalizedDistrict
+    ) {
+      return res.status(400).json({
+        message:
+          "Name, email, phone and district cannot be empty.",
+      });
+    }
+
+    // ==================================================
+    // EMAIL VALIDATION
+    // ==================================================
+
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        normalizedEmail
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Please provide a valid email address.",
+      });
+    }
+
+    // ==================================================
+    // PHONE VALIDATION
+    // ==================================================
+
+    if (!/^[6-9]\d{9}$/.test(normalizedPhone)) {
+      return res.status(400).json({
+        message:
+          "Please provide a valid 10-digit Indian mobile number.",
+      });
+    }
+
+    // ==================================================
+    // PASSWORD VALIDATION
     // ==================================================
 
     if (password !== confirmPassword) {
@@ -202,7 +323,7 @@ const createOfficer = async (req, res) => {
     // ==================================================
 
     const existingUser = await User.findOne({
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
     });
 
     if (existingUser) {
@@ -216,8 +337,6 @@ const createOfficer = async (req, res) => {
     // HASH PASSWORD
     // ==================================================
 
-    const bcrypt = require("bcryptjs");
-
     const hashedPassword = await bcrypt.hash(
       password,
       10
@@ -228,20 +347,13 @@ const createOfficer = async (req, res) => {
     // ==================================================
 
     const officer = await User.create({
-      name: name.trim(),
-
-      email: email.trim().toLowerCase(),
-
-      phone: phone.trim(),
-
+      name: normalizedName,
+      email: normalizedEmail,
+      phone: normalizedPhone,
       password: hashedPassword,
-
       role: "OFFICER",
-
-      district: district.trim(),
-
+      district: normalizedDistrict,
       housingStatus: "NOT_ALLOTTED",
-
       isActive: true,
     });
 
@@ -249,9 +361,8 @@ const createOfficer = async (req, res) => {
     // RESPONSE
     // ==================================================
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Officer created successfully.",
-
       officer: {
         _id: officer._id,
         name: officer.name,
@@ -260,15 +371,20 @@ const createOfficer = async (req, res) => {
         role: officer.role,
         district: officer.district,
         isActive: officer.isActive,
+        createdAt: officer.createdAt,
       },
     });
   } catch (error) {
-    console.error(
-      "Create officer error:",
-      error
-    );
+    console.error("Create officer error:", error);
 
-    res.status(500).json({
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message:
+          "A user with this email already exists.",
+      });
+    }
+
+    return res.status(500).json({
       message:
         "Server error while creating officer.",
     });
@@ -278,11 +394,22 @@ const createOfficer = async (req, res) => {
 // ======================================================
 // GET ADMIN DASHBOARD
 // ======================================================
+//
+// Dashboard statistics are based on:
+//
+// User
+// Application
+// WaitingList
+// Allotment
+// HousingScheme configurations
+//
+// No HousingScheme.status is used.
+// ======================================================
 
 const getAdminDashboard = async (req, res) => {
   try {
     // ==================================================
-    // BASIC COUNTS
+    // USER COUNTS
     // ==================================================
 
     const totalApplicants = await User.countDocuments({
@@ -293,142 +420,247 @@ const getAdminDashboard = async (req, res) => {
       role: "OFFICER",
     });
 
-    const totalApplications = await Application.countDocuments();
-
-    const pendingVerification = await Application.countDocuments({
-      status: {
-        $in: ["SUBMITTED", "UNDER_VERIFICATION"],
-      },
-    });
-
-    const housesAllotted = await Allotment.countDocuments({
-      status: "ACCEPTED",
-    });
-
-    const totalAllotments = await Allotment.countDocuments();
-
-    const activeSchemes = await HousingScheme.countDocuments({
-      status: "OPEN",
-    });
-
-    const totalSchemes = await HousingScheme.countDocuments();
-
-    const upcomingSchemes = await HousingScheme.countDocuments({
-      status: "UPCOMING",
-    });
-
-    const closedSchemes = await HousingScheme.countDocuments({
-      status: "CLOSED",
-    });
-
-    const completedSchemes = await HousingScheme.countDocuments({
-      status: "COMPLETED",
-    });
-
     // ==================================================
-    // APPLICATION STATUS COUNTS
+    // APPLICATION COUNTS
     // ==================================================
 
-    const applicationStatusAggregation =
-      await Application.aggregate([
+    const totalApplications =
+      await Application.countDocuments();
+
+    const submittedApplications =
+      await Application.countDocuments({
+        status: "SUBMITTED",
+      });
+
+    const underVerification =
+      await Application.countDocuments({
+        status: "UNDER_VERIFICATION",
+      });
+
+    const eligibleApplications =
+      await Application.countDocuments({
+        status: "ELIGIBLE",
+      });
+
+    const rejectedApplications =
+      await Application.countDocuments({
+        status: "REJECTED",
+      });
+
+    const withdrawnApplications =
+      await Application.countDocuments({
+        status: "WITHDRAWN",
+      });
+
+    // ==================================================
+    // WAITING LIST COUNTS
+    // ==================================================
+
+    const activeWaitingListEntries =
+      await WaitingList.countDocuments({
+        status: "ACTIVE",
+      });
+
+    const removedWaitingListEntries =
+      await WaitingList.countDocuments({
+        status: "REMOVED",
+      });
+
+    // ==================================================
+    // ALLOTMENT COUNTS
+    // ==================================================
+
+    const totalAllotments =
+      await Allotment.countDocuments();
+
+    const offeredAllotments =
+      await Allotment.countDocuments({
+        status: "OFFERED",
+      });
+
+    const acceptedAllotments =
+      await Allotment.countDocuments({
+        status: "ACCEPTED",
+      });
+
+    const rejectedAllotments =
+      await Allotment.countDocuments({
+        status: "REJECTED",
+      });
+
+    const cancelledAllotments =
+      await Allotment.countDocuments({
+        status: "CANCELLED",
+      });
+
+    // ==================================================
+    // SCHEME COUNTS
+    // ==================================================
+    //
+    // A scheme is a common scheme.
+    //
+    // Operational district availability is represented
+    // by embedded configurations.
+    //
+    // ==================================================
+
+    const totalSchemes =
+      await HousingScheme.countDocuments();
+
+    const schemesWithConfigurations =
+      await HousingScheme.countDocuments({
+        "configurations.0": {
+          $exists: true,
+        },
+      });
+
+    // ==================================================
+    // TOTAL HOUSING UNITS
+    // ==================================================
+
+    const schemeUnitAggregation =
+      await HousingScheme.aggregate([
+        {
+          $unwind: {
+            path: "$configurations",
+            preserveNullAndEmptyArrays: false,
+          },
+        },
         {
           $group: {
-            _id: "$status",
-            count: {
-              $sum: 1,
+            _id: null,
+            totalUnits: {
+              $sum: "$configurations.totalUnits",
+            },
+            availableUnits: {
+              $sum: "$configurations.availableUnits",
             },
           },
         },
       ]);
 
-    const applicationStatusCounts = {
-      SUBMITTED: 0,
-      UNDER_VERIFICATION: 0,
-      ELIGIBLE: 0,
-      INELIGIBLE: 0,
-      WAITING_LIST: 0,
-      ALLOTMENT_OFFERED: 0,
-      ALLOTTED: 0,
-      REJECTED: 0,
-      WITHDRAWN: 0,
-    };
+    const totalUnits =
+      schemeUnitAggregation.length > 0
+        ? schemeUnitAggregation[0].totalUnits
+        : 0;
 
-    applicationStatusAggregation.forEach((item) => {
-      if (item._id) {
-        applicationStatusCounts[item._id] = item.count;
-      }
-    });
+    const availableUnits =
+      schemeUnitAggregation.length > 0
+        ? schemeUnitAggregation[0].availableUnits
+        : 0;
+
+    const allottedUnits =
+      totalUnits - availableUnits;
 
     // ==================================================
     // RECENT APPLICATIONS
     // ==================================================
 
-    const recentApplications = await Application.find()
-      .populate(
-        "applicantId",
-        "name email phone district"
-      )
-      .populate(
-        "schemeId",
-        "schemeName status"
-      )
-      .sort({
-        createdAt: -1,
-      })
-      .limit(10);
+    const recentApplications =
+      await Application.find()
+        .populate(
+          "applicantId",
+          "name email phone district"
+        )
+        .populate(
+          "schemeId",
+          "schemeName houseModel price"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .limit(10);
 
     // ==================================================
-    // ALL HOUSING SCHEMES
+    // ALL SCHEMES
     // ==================================================
 
-    const schemes = await HousingScheme.find()
-      .populate(
-        "createdBy",
-        "name email"
-      )
-      .sort({
-        createdAt: -1,
-      });
+    const schemes =
+      await HousingScheme.find()
+        .populate(
+          "createdBy",
+          "name email"
+        )
+        .populate(
+          "configurations.officer",
+          "name email phone district"
+        )
+        .sort({
+          createdAt: -1,
+        });
 
     // ==================================================
     // ALL OFFICERS
     // ==================================================
 
-    const officers = await User.find({
-      role: "OFFICER",
-    })
-      .select(
-        "name email phone district isActive createdAt"
-      )
-      .sort({
-        createdAt: -1,
-      });
+    const officers =
+      await User.find({
+        role: "OFFICER",
+      })
+        .select(
+          "name email phone district isActive createdAt"
+        )
+        .sort({
+          createdAt: -1,
+        });
 
     // ==================================================
     // RESPONSE
     // ==================================================
 
-    res.status(200).json({
+    return res.status(200).json({
       statistics: {
         totalApplicants,
         totalOfficers,
+
         totalApplications,
-        pendingVerification,
-        housesAllotted,
+        submittedApplications,
+        underVerification,
+        eligibleApplications,
+        rejectedApplications,
+        withdrawnApplications,
+
+        activeWaitingListEntries,
+        removedWaitingListEntries,
+
         totalAllotments,
-        activeSchemes,
+        offeredAllotments,
+        acceptedAllotments,
+        rejectedAllotments,
+        cancelledAllotments,
+
         totalSchemes,
-        upcomingSchemes,
-        closedSchemes,
-        completedSchemes,
+        schemesWithConfigurations,
+
+        totalUnits,
+        availableUnits,
+        allottedUnits,
+
+        housesAllotted: acceptedAllotments,
       },
 
-      applicationStatusCounts,
+      applicationStatusCounts: {
+        SUBMITTED: submittedApplications,
+        UNDER_VERIFICATION: underVerification,
+        ELIGIBLE: eligibleApplications,
+        REJECTED: rejectedApplications,
+        WITHDRAWN: withdrawnApplications,
+      },
+
+      allotmentStatusCounts: {
+        OFFERED: offeredAllotments,
+        ACCEPTED: acceptedAllotments,
+        REJECTED: rejectedAllotments,
+        CANCELLED: cancelledAllotments,
+      },
+
+      waitingListStatistics: {
+        ACTIVE: activeWaitingListEntries,
+        REMOVED: removedWaitingListEntries,
+      },
 
       recentApplications,
-
       schemes,
-
       officers,
     });
   } catch (error) {
@@ -437,30 +669,38 @@ const getAdminDashboard = async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error while fetching admin dashboard.",
     });
   }
 };
 
-
 // ======================================================
 // GET ALL HOUSING SCHEMES
+// ======================================================
+//
+// Admin can view every common scheme and all district
+// configurations.
 // ======================================================
 
 const getAllSchemes = async (req, res) => {
   try {
-    const schemes = await HousingScheme.find()
-      .populate(
-        "createdBy",
-        "name email"
-      )
-      .sort({
-        createdAt: -1,
-      });
+    const schemes =
+      await HousingScheme.find()
+        .populate(
+          "createdBy",
+          "name email"
+        )
+        .populate(
+          "configurations.officer",
+          "name email phone district"
+        )
+        .sort({
+          createdAt: -1,
+        });
 
-    res.status(200).json({
+    return res.status(200).json({
       schemes,
     });
   } catch (error) {
@@ -469,9 +709,127 @@ const getAllSchemes = async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error while fetching housing schemes.",
+    });
+  }
+};
+
+// ======================================================
+// GET ALL OFFICERS
+// ======================================================
+//
+// Admin management page.
+// ======================================================
+
+const getAllOfficers = async (req, res) => {
+  try {
+    const officers =
+      await User.find({
+        role: "OFFICER",
+      })
+        .select(
+          "name email phone district isActive createdAt"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    return res.status(200).json({
+      officers,
+    });
+  } catch (error) {
+    console.error(
+      "Get all officers error:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Server error while fetching officers.",
+    });
+  }
+};
+
+// ======================================================
+// UPDATE OFFICER ACTIVE STATUS
+// ======================================================
+//
+// Admin can activate/deactivate an officer.
+//
+// Existing configurations and historical records are
+// preserved.
+// ======================================================
+
+const updateOfficerStatus = async (req, res) => {
+  try {
+    const { officerId } = req.params;
+    const { isActive } = req.body;
+
+    // ==================================================
+    // VALIDATION
+    // ==================================================
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({
+        message:
+          "isActive must be a boolean value.",
+      });
+    }
+
+    // ==================================================
+    // FIND OFFICER
+    // ==================================================
+
+    const officer =
+      await User.findOne({
+        _id: officerId,
+        role: "OFFICER",
+      });
+
+    if (!officer) {
+      return res.status(404).json({
+        message: "Officer not found.",
+      });
+    }
+
+    // ==================================================
+    // UPDATE STATUS
+    // ==================================================
+
+    officer.isActive = isActive;
+
+    await officer.save();
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
+      message: isActive
+        ? "Officer activated successfully."
+        : "Officer deactivated successfully.",
+
+      officer: {
+        _id: officer._id,
+        name: officer.name,
+        email: officer.email,
+        phone: officer.phone,
+        district: officer.district,
+        role: officer.role,
+        isActive: officer.isActive,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Update officer status error:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Server error while updating officer status.",
     });
   }
 };
@@ -485,5 +843,6 @@ module.exports = {
   createOfficer,
   getAdminDashboard,
   getAllSchemes,
-
+  getAllOfficers,
+  updateOfficerStatus,
 };

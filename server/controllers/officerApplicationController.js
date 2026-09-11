@@ -1,81 +1,95 @@
 const Application = require("../models/Application");
 const HousingScheme = require("../models/HousingScheme");
+const WaitingList = require("../models/WaitingList");
+const {
+  recalculateWaitingList,
+} = require("./waitingListController");
+
+// ======================================================
+// HELPER
+// ======================================================
+
+const normalizeDistrict = (district) => {
+  return district?.trim().toLowerCase();
+};
 
 // ======================================================
 // GET APPLICATIONS FOR OFFICER
 // ======================================================
-// Officer can only see applications belonging to
-// schemes assigned to that officer.
 //
-// Admin creates the scheme and assigns the officer.
-// Officer does NOT create or modify the scheme's
-// fixed details.
+// Officer can see ONLY applications belonging to the
+// Officer's district.
 //
-// Fixed scheme details controlled by Admin:
-// - Scheme name
-// - Description
-// - Eligible income categories
-// - Maximum annual income
-// - House model
-// - House price
+// Access is based on:
 //
-// Operational details configured by Officer:
-// - Total units
-// - Location
-// - Application period
+//     application.district
+//             ===
+//     officer.district
+//
+// Scheme configuration is NOT used for access.
+//
+// An applicant can apply before the Officer configures
+// the scheme for the district.
+// ======================================================
 
 const getOfficerApplications = async (req, res) => {
   try {
-    const officerId = req.user.userId;
+    const officerDistrict = req.user.district;
 
     // ==================================================
-    // FIND SCHEMES ASSIGNED TO THIS OFFICER
+    // VALIDATE OFFICER DISTRICT
     // ==================================================
 
-    const schemes = await HousingScheme.find({
-      assignedOfficer: officerId,
-    }).select("_id");
+    if (
+      !officerDistrict ||
+      !officerDistrict.trim()
+    ) {
+      return res.status(400).json({
+        message:
+          "Officer district is not configured.",
+      });
+    }
 
-    const schemeIds = schemes.map(
-      (scheme) => scheme._id
-    );
+    const normalizedOfficerDistrict =
+      normalizeDistrict(officerDistrict);
 
     // ==================================================
     // FIND APPLICATIONS
     // ==================================================
 
-    const applications = await Application.find({
-      schemeId: {
-        $in: schemeIds,
-      },
-    })
-      .populate(
-        "applicantId",
-        "name email phone district"
-      )
-      .populate(
-        "schemeId",
-        `
-        schemeName
-        description
-        eligibleIncomeCategories
-        maximumAnnualIncome
-        houseModel
-        price
-        location
-        totalUnits
-        availableUnits
-        applicationStartDate
-        applicationEndDate
-        status
-        assignedOfficer
-        `
-      )
-      .sort({
-        createdAt: -1,
-      });
+    const applications =
+      await Application.find({
+        district: {
+          $regex: `^${officerDistrict.trim()}$`,
+          $options: "i",
+        },
+      })
+        .populate(
+          "applicantId",
+          "name email phone district housingStatus"
+        )
+        .populate({
+          path: "schemeId",
+          select: `
+            schemeName
+            description
+            eligibleIncomeCategories
+            maximumAnnualIncome
+            houseModel
+            price
+            configurations
+            createdBy
+          `,
+        })
+        .sort({
+          createdAt: -1,
+        });
 
-    res.status(200).json({
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
       applications,
     });
   } catch (error) {
@@ -84,78 +98,103 @@ const getOfficerApplications = async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error while fetching applications.",
     });
   }
 };
 
-
 // ======================================================
 // GET SINGLE APPLICATION
 // ======================================================
-// Officer can view an application only when its
-// housing scheme is assigned to that officer.
+//
+// Officer can view an application ONLY when its
+// district matches the Officer's district.
+// ======================================================
 
-const getOfficerApplicationById = async (req, res) => {
+const getOfficerApplicationById = async (
+  req,
+  res
+) => {
   try {
-    const officerId = req.user.userId;
-
+    const officerDistrict = req.user.district;
     const { applicationId } = req.params;
+
+    // ==================================================
+    // VALIDATE OFFICER DISTRICT
+    // ==================================================
+
+    if (
+      !officerDistrict ||
+      !officerDistrict.trim()
+    ) {
+      return res.status(400).json({
+        message:
+          "Officer district is not configured.",
+      });
+    }
 
     // ==================================================
     // FIND APPLICATION
     // ==================================================
 
-    const application = await Application.findById(
-      applicationId
-    )
-      .populate(
-        "applicantId",
-        "name email phone district"
+    const application =
+      await Application.findById(
+        applicationId
       )
-      .populate({
-        path: "schemeId",
-        select: `
-          schemeName
-          description
-          eligibleIncomeCategories
-          maximumAnnualIncome
-          houseModel
-          price
-          location
-          totalUnits
-          availableUnits
-          applicationStartDate
-          applicationEndDate
-          status
-          assignedOfficer
-        `,
-      });
+        .populate(
+          "applicantId",
+          "name email phone district housingStatus"
+        )
+        .populate({
+          path: "schemeId",
+          select: `
+            schemeName
+            description
+            eligibleIncomeCategories
+            maximumAnnualIncome
+            houseModel
+            price
+            configurations
+            createdBy
+          `,
+        });
+
+    // ==================================================
+    // APPLICATION NOT FOUND
+    // ==================================================
 
     if (!application) {
       return res.status(404).json({
-        message: "Application not found.",
+        message:
+          "Application not found.",
       });
     }
 
     // ==================================================
-    // CHECK OFFICER ASSIGNMENT
+    // CHECK DISTRICT ACCESS
     // ==================================================
 
     if (
-      !application.schemeId ||
-      application.schemeId.assignedOfficer?.toString() !==
-        officerId.toString()
+      normalizeDistrict(
+        application.district
+      ) !==
+      normalizeDistrict(
+        officerDistrict
+      )
     ) {
       return res.status(403).json({
         message:
-          "You do not have permission to view this application.",
+          "You do not have permission to view applications from another district.",
       });
     }
 
-    res.status(200).json({
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
       application,
     });
   } catch (error) {
@@ -164,41 +203,53 @@ const getOfficerApplicationById = async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    return res.status(500).json({
       message:
         "Server error while fetching application.",
     });
   }
 };
 
-
 // ======================================================
 // VERIFY APPLICATION
 // ======================================================
-// Officer performs application verification.
 //
-// ELIGIBLE
-//     -> Applicant satisfies the Admin-defined
-//        scheme eligibility rules.
-//     -> Application becomes eligible for ranking.
+// FINAL WORKFLOW:
 //
-// REJECTED
-//     -> Application is rejected.
-//     -> Application will NOT participate in ranking.
+// SUBMITTED
+//     ↓
+// Officer verification
+//     ↓
+// ┌────────────────┐
+// │                │
+// ▼                ▼
+// ELIGIBLE       REJECTED
+// │
+// ▼
+// WaitingList ACTIVE
+// │
+// ▼
+// District ranking
 //
 // IMPORTANT:
-// Ranking is NOT generated here.
 //
-// Ranking happens only after the application period
-// closes.
+// A district configuration is NOT required for
+// verification or ranking.
 //
-// Waiting-list positions are also NOT generated here.
+// The applicant can apply and become eligible before
+// the Officer configures housing.
 //
-// Allotment is NOT generated here.
+// Configuration is required later for ALLOTMENT.
+//
+// ======================================================
 
-const verifyApplication = async (req, res) => {
+const verifyApplication = async (
+  req,
+  res
+) => {
   try {
     const officerId = req.user.userId;
+    const officerDistrict = req.user.district;
 
     const { applicationId } = req.params;
 
@@ -208,11 +259,30 @@ const verifyApplication = async (req, res) => {
     } = req.body;
 
     // ==================================================
+    // VALIDATE OFFICER DISTRICT
+    // ==================================================
+
+    if (
+      !officerDistrict ||
+      !officerDistrict.trim()
+    ) {
+      return res.status(400).json({
+        message:
+          "Officer district is not configured.",
+      });
+    }
+
+    const normalizedOfficerDistrict =
+      normalizeDistrict(officerDistrict);
+
+    // ==================================================
     // VALIDATE STATUS
     // ==================================================
 
     if (
-      !["ELIGIBLE", "REJECTED"].includes(status)
+      !["ELIGIBLE", "REJECTED"].includes(
+        status
+      )
     ) {
       return res.status(400).json({
         message:
@@ -221,13 +291,15 @@ const verifyApplication = async (req, res) => {
     }
 
     // ==================================================
-    // REJECTION FEEDBACK REQUIRED
+    // VALIDATE REJECTION REMARKS
     // ==================================================
 
     if (
       status === "REJECTED" &&
-      (!verificationRemarks ||
-        !verificationRemarks.trim())
+      (
+        !verificationRemarks ||
+        !verificationRemarks.trim()
+      )
     ) {
       return res.status(400).json({
         message:
@@ -242,7 +314,7 @@ const verifyApplication = async (req, res) => {
     const application =
       await Application.findById(
         applicationId
-      ).populate("schemeId");
+      );
 
     if (!application) {
       return res.status(404).json({
@@ -252,10 +324,28 @@ const verifyApplication = async (req, res) => {
     }
 
     // ==================================================
+    // CHECK DISTRICT ACCESS
+    // ==================================================
+
+    if (
+      normalizeDistrict(
+        application.district
+      ) !== normalizedOfficerDistrict
+    ) {
+      return res.status(403).json({
+        message:
+          "You can verify applications only from your own district.",
+      });
+    }
+
+    // ==================================================
     // FIND ASSOCIATED SCHEME
     // ==================================================
 
-    const scheme = application.schemeId;
+    const scheme =
+      await HousingScheme.findById(
+        application.schemeId
+      );
 
     if (!scheme) {
       return res.status(404).json({
@@ -265,30 +355,23 @@ const verifyApplication = async (req, res) => {
     }
 
     // ==================================================
-    // CHECK OFFICER ASSIGNMENT
+    // APPLICATION STATUS CHECK
     // ==================================================
-
-    if (
-      scheme.assignedOfficer?.toString() !==
-      officerId.toString()
-    ) {
-      return res.status(403).json({
-        message:
-          "You do not have permission to process this application.",
-      });
-    }
-
+    //
+    // Only unprocessed applications can be verified.
+    //
+    // SUBMITTED
+    // UNDER_VERIFICATION
+    //
     // ==================================================
-    // APPLICATION MUST BE SUBMITTED
-    // ==================================================
-    // Only submitted / under-verification applications
-    // can be processed by the officer.
 
     if (
       ![
         "SUBMITTED",
         "UNDER_VERIFICATION",
-      ].includes(application.status)
+      ].includes(
+        application.status
+      )
     ) {
       return res.status(400).json({
         message:
@@ -297,46 +380,15 @@ const verifyApplication = async (req, res) => {
     }
 
     // ==================================================
-    // VALIDATE APPLICATION PERIOD
-    // ==================================================
-    // Officer cannot verify an application before
-    // the scheme application period starts.
-
-    const now = new Date();
-
-    if (
-      scheme.applicationStartDate &&
-      now <
-        new Date(
-          scheme.applicationStartDate
-        )
-    ) {
-      return res.status(400).json({
-        message:
-          "The application period has not started yet.",
-      });
-    }
-
-    // ==================================================
     // CHECK ADMIN-DEFINED ELIGIBILITY
     // ==================================================
     //
-    // Example:
+    // Officer cannot modify the common scheme rules.
     //
-    // Anna Housing Scheme
-    // -------------------
-    // Eligible Category: EWS
-    // Maximum Income: ₹2,00,000
+    // Rules:
     //
-    // Gandhi Housing Scheme
-    // ---------------------
-    // Eligible Category: LIG
-    // Maximum Income: ₹4,00,000
-    //
-    // These values come from HousingScheme.
-    //
-    // Officer cannot change these rules.
-    // Applicant cannot change these rules.
+    // eligibleIncomeCategories
+    // maximumAnnualIncome
     //
     // ==================================================
 
@@ -352,23 +404,33 @@ const verifyApplication = async (req, res) => {
       );
 
     const incomeAllowed =
-      Number(application.annualIncome) <=
-      Number(scheme.maximumAnnualIncome);
+      Number(
+        application.annualIncome
+      ) <=
+      Number(
+        scheme.maximumAnnualIncome
+      );
 
     // ==================================================
-    // APPROVAL VALIDATION
+    // ELIGIBILITY VALIDATION
     // ==================================================
-    // Officer can approve only when the applicant
-    // satisfies the fixed scheme eligibility.
 
     if (status === "ELIGIBLE") {
+      // ----------------------------------------------
+      // INCOME CATEGORY
+      // ----------------------------------------------
+
       if (!categoryAllowed) {
         return res.status(400).json({
           message:
             `Applicant income category (${applicantCategory}) ` +
-            `is not eligible for this housing scheme.`,
+            "is not eligible for this housing scheme.",
         });
       }
+
+      // ----------------------------------------------
+      // ANNUAL INCOME
+      // ----------------------------------------------
 
       if (!incomeAllowed) {
         return res.status(400).json({
@@ -394,14 +456,155 @@ const verifyApplication = async (req, res) => {
     await application.save();
 
     // ==================================================
-    // RESPONSE
+    // CREATE / ACTIVATE WAITING LIST ENTRY
+    // ==================================================
+    //
+    // IMPORTANT:
+    //
+    // This happens immediately after successful
+    // eligibility verification.
+    //
+    // It does NOT require a district configuration.
+    //
+    // Ranking is based on:
+    //
+    //     schemeId + district
+    //
     // ==================================================
 
-    res.status(200).json({
+    if (status === "ELIGIBLE") {
+      // ----------------------------------------------
+      // Check whether a waiting-list entry already
+      // exists for this application.
+      // ----------------------------------------------
+
+      let waitingListEntry =
+        await WaitingList.findOne({
+          applicationId:
+            application._id,
+        });
+
+      // ----------------------------------------------
+      // Find the current highest active position
+      // for this scheme + district.
+      // ----------------------------------------------
+
+      const lastWaitingListEntry =
+        await WaitingList.findOne({
+          schemeId:
+            application.schemeId,
+          district:
+            application.district,
+          status: "ACTIVE",
+        })
+          .sort({
+            districtPosition: -1,
+          });
+
+      const nextPosition =
+        lastWaitingListEntry
+          ? Number(
+              lastWaitingListEntry.districtPosition
+            ) + 1
+          : 1;
+
+      // ----------------------------------------------
+      // Existing waiting-list entry
+      // ----------------------------------------------
+
+      if (waitingListEntry) {
+        waitingListEntry.applicantId =
+          application.applicantId;
+
+        waitingListEntry.applicationId =
+          application._id;
+
+        waitingListEntry.schemeId =
+          application.schemeId;
+
+        waitingListEntry.district =
+          application.district;
+
+        waitingListEntry.districtPosition =
+          nextPosition;
+
+        waitingListEntry.status =
+          "ACTIVE";
+
+        waitingListEntry.removedAt =
+          null;
+
+        waitingListEntry.removalReason =
+          undefined;
+
+        waitingListEntry.lastUpdated =
+          new Date();
+
+        await waitingListEntry.save();
+      } else {
+        // --------------------------------------------
+        // Create new waiting-list entry
+        // --------------------------------------------
+
+        waitingListEntry =
+          await WaitingList.create({
+            applicantId:
+              application.applicantId,
+
+            applicationId:
+              application._id,
+
+            schemeId:
+              application.schemeId,
+
+            district:
+              application.district,
+
+            districtPosition:
+              nextPosition,
+
+            status: "ACTIVE",
+
+            lastUpdated:
+              new Date(),
+          });
+      }
+
+      const rankedEntries =
+        await recalculateWaitingList(
+          application.schemeId,
+          application.district
+        );
+
+      const rankedEntry = rankedEntries.find(
+        (entry) =>
+          entry.applicationId?._id?.toString() ===
+            application._id.toString() ||
+          entry.applicationId?.toString() ===
+            application._id.toString()
+      );
+
+      // ==================================================
+      // RESPONSE — ELIGIBLE + RANKED
+      // ==================================================
+
+      return res.status(200).json({
+        message:
+          "Application verified successfully and added to the district waiting list.",
+
+        application,
+
+        waitingList: rankedEntry || waitingListEntry,
+      });
+    }
+
+    // ==================================================
+    // REJECTED APPLICATION
+    // ==================================================
+
+    return res.status(200).json({
       message:
-        status === "ELIGIBLE"
-          ? "Application approved successfully. It will be considered for ranking after the application period closes."
-          : "Application rejected successfully.",
+        "Application rejected successfully.",
 
       application,
     });
@@ -411,13 +614,37 @@ const verifyApplication = async (req, res) => {
       error
     );
 
-    res.status(500).json({
+    // ==================================================
+    // DUPLICATE WAITING-LIST ENTRY
+    // ==================================================
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        message:
+          "A waiting-list entry already exists for this application.",
+      });
+    }
+
+    // ==================================================
+    // MONGOOSE VALIDATION
+    // ==================================================
+
+    if (
+      error.name === "ValidationError"
+    ) {
+      return res.status(400).json({
+        message:
+          error.message ||
+          "Invalid waiting-list data.",
+      });
+    }
+
+    return res.status(500).json({
       message:
         "Server error while verifying application.",
     });
   }
 };
-
 
 // ======================================================
 // EXPORTS

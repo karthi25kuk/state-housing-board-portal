@@ -2,8 +2,11 @@ const express = require("express");
 
 const {
   createScheme,
+  getAllSchemes,
   createOfficer,
   getAdminDashboard,
+  getAllOfficers,
+  updateOfficerStatus,
 } = require("../controllers/adminController");
 
 const protect = require("../middleware/authMiddleware");
@@ -23,7 +26,7 @@ router.get(
 );
 
 // ======================================================
-// CREATE HOUSING SCHEME
+// HOUSING SCHEMES
 // ======================================================
 
 router.post(
@@ -33,8 +36,15 @@ router.post(
   createScheme
 );
 
+router.get(
+  "/schemes",
+  protect,
+  allowRoles("ADMIN"),
+  getAllSchemes
+);
+
 // ======================================================
-// CREATE OFFICER
+// OFFICERS
 // ======================================================
 
 router.post(
@@ -42,6 +52,20 @@ router.post(
   protect,
   allowRoles("ADMIN"),
   createOfficer
+);
+
+router.get(
+  "/officers",
+  protect,
+  allowRoles("ADMIN"),
+  getAllOfficers
+);
+
+router.patch(
+  "/officers/:officerId/status",
+  protect,
+  allowRoles("ADMIN"),
+  updateOfficerStatus
 );
 
 module.exports = router;

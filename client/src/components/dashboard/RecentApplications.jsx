@@ -2,33 +2,64 @@ import { Link } from "react-router-dom";
 import { FaEye } from "react-icons/fa";
 
 function RecentApplications({ applications = [] }) {
+  // ==========================================
+  // APPLICATION STATUS STYLES
+  // ==========================================
+
   const statusStyles = {
     SUBMITTED: "bg-yellow-100 text-yellow-700",
+    UNDER_VERIFICATION: "bg-blue-100 text-blue-700",
     ELIGIBLE: "bg-green-100 text-green-700",
-    WAITING_LIST: "bg-purple-100 text-purple-700",
-    ALLOTMENT_OFFERED: "bg-blue-100 text-blue-700",
-    ACCEPTED: "bg-green-100 text-green-700",
     REJECTED: "bg-red-100 text-red-700",
-    CANCELLED: "bg-gray-100 text-gray-600",
+    WITHDRAWN: "bg-gray-100 text-gray-600",
   };
+
+  // ==========================================
+  // APPLICATION STATUS LABELS
+  // ==========================================
 
   const statusLabels = {
     SUBMITTED: "Submitted",
+    UNDER_VERIFICATION: "Under Verification",
     ELIGIBLE: "Eligible",
-    WAITING_LIST: "Waiting List",
-    ALLOTMENT_OFFERED: "Allotment Offered",
-    ACCEPTED: "Accepted",
     REJECTED: "Rejected",
-    CANCELLED: "Cancelled",
+    WITHDRAWN: "Withdrawn",
   };
 
-  // Show latest 5 applications
+  // ==========================================
+  // SHOW LATEST 5 APPLICATIONS
+  // ==========================================
+
   const recentApplications = applications.slice(0, 5);
+
+  // ==========================================
+  // DATE FORMATTER
+  // ==========================================
+
+  const formatDate = (date) => {
+    if (!date) return "-";
+
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "-";
+    }
+
+    return parsedDate.toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  // ==========================================
+  // RENDER
+  // ==========================================
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+      {/* HEADER */}
 
-      {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-gray-100">
         <div>
           <h3 className="text-lg font-semibold text-gray-800">
@@ -48,7 +79,8 @@ function RecentApplications({ applications = [] }) {
         </Link>
       </div>
 
-      {/* Empty State */}
+      {/* EMPTY STATE */}
+
       {recentApplications.length === 0 ? (
         <div className="p-10 text-center">
           <p className="text-gray-500">
@@ -65,7 +97,6 @@ function RecentApplications({ applications = [] }) {
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-
             <thead className="bg-gray-50 text-gray-500">
               <tr>
                 <th className="text-left px-6 py-3 font-medium">
@@ -92,12 +123,10 @@ function RecentApplications({ applications = [] }) {
 
             <tbody>
               {recentApplications.map((application) => {
-
                 const applicationId =
                   application.applicationNumber ||
                   application._id;
 
-                // Backend returns populated schemeId
                 const schemeName =
                   application.schemeId?.schemeName ||
                   "Housing Scheme";
@@ -105,17 +134,6 @@ function RecentApplications({ applications = [] }) {
                 const submittedDate =
                   application.submittedAt ||
                   application.createdAt;
-
-                const formattedDate = submittedDate
-                  ? new Date(submittedDate).toLocaleDateString(
-                      "en-IN",
-                      {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      }
-                    )
-                  : "-";
 
                 const status =
                   application.status || "SUBMITTED";
@@ -125,26 +143,32 @@ function RecentApplications({ applications = [] }) {
 
                 return (
                   <tr
-                    key={application._id || applicationId}
+                    key={
+                      application._id ||
+                      application.applicationNumber
+                    }
                     className="border-t border-gray-100 hover:bg-gray-50"
                   >
+                    {/* APPLICATION ID */}
 
-                    {/* Application ID */}
                     <td className="px-6 py-4 font-medium text-gray-800">
                       {applicationId}
                     </td>
 
-                    {/* Scheme */}
+                    {/* HOUSING SCHEME */}
+
                     <td className="px-6 py-4 text-gray-600">
                       {schemeName}
                     </td>
 
-                    {/* Submitted Date */}
+                    {/* SUBMITTED DATE */}
+
                     <td className="px-6 py-4 text-gray-600">
-                      {formattedDate}
+                      {formatDate(submittedDate)}
                     </td>
 
-                    {/* Status */}
+                    {/* STATUS */}
+
                     <td className="px-6 py-4">
                       <span
                         className={`px-3 py-1 rounded-full text-xs font-medium ${
@@ -156,22 +180,21 @@ function RecentApplications({ applications = [] }) {
                       </span>
                     </td>
 
-                    {/* Action */}
+                    {/* ACTION */}
+
                     <td className="px-6 py-4">
                       <Link
                         to={`/applicant/applications/${application._id}`}
-                        className="flex items-center gap-2 text-blue-600 hover:text-blue-800"
+                        className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-800 font-medium"
                       >
                         <FaEye />
                         View
                       </Link>
                     </td>
-
                   </tr>
                 );
               })}
             </tbody>
-
           </table>
         </div>
       )}

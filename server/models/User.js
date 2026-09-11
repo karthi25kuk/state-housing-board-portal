@@ -1,8 +1,15 @@
 const mongoose = require("mongoose");
 
+// ======================================================
+// USER SCHEMA
+// ======================================================
+
 const userSchema = new mongoose.Schema(
   {
-    // Account Information
+    // ==================================================
+    // BASIC DETAILS
+    // ==================================================
+
     name: {
       type: String,
       required: true,
@@ -28,29 +35,79 @@ const userSchema = new mongoose.Schema(
       required: true,
     },
 
-    // User Role
+    // ==================================================
+    // ROLE
+    // ==================================================
+
     role: {
       type: String,
-      enum: ["ADMIN", "OFFICER", "APPLICANT"],
+      enum: [
+        "APPLICANT",
+        "OFFICER",
+        "ADMIN",
+      ],
       default: "APPLICANT",
+      required: true,
+      index: true,
     },
 
-    // District assigned to the user
-    // Required only for OFFICER
+    // ==================================================
+    // DISTRICT
+    // ==================================================
+    //
+    // IMPORTANT:
+    //
+    // APPLICANT:
+    //     District represents the applicant's registered
+    //     residential district.
+    //
+    // OFFICER:
+    //     District represents the district the officer
+    //     is responsible for.
+    //
+    // ADMIN:
+    //     District is normally not required.
+    //
+    // This field is the basis for district-level access.
+    //
+
     district: {
       type: String,
       trim: true,
       default: null,
+      index: true,
     },
 
-    // Housing Status
+    // ==================================================
+    // HOUSING STATUS
+    // ==================================================
+    //
+    // APPLICANT ONLY
+    //
+    // NOT_ALLOTTED
+    //     Applicant has not received a house.
+    //
+    // ALLOTTED
+    //     Applicant has accepted a house.
+    //
+    // This prevents an applicant from receiving multiple
+    // houses through different schemes.
+    //
+
     housingStatus: {
       type: String,
-      enum: ["NOT_ALLOTTED", "ALLOTTED"],
+      enum: [
+        "NOT_ALLOTTED",
+        "ALLOTTED",
+      ],
       default: "NOT_ALLOTTED",
+      index: true,
     },
 
-    // Account Status
+    // ==================================================
+    // ACCOUNT STATUS
+    // ==================================================
+
     isActive: {
       type: Boolean,
       default: true,
@@ -61,4 +118,22 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("User", userSchema);
+
+// ======================================================
+// INDEXES
+// ======================================================
+
+userSchema.index({
+  role: 1,
+  district: 1,
+});
+
+
+// ======================================================
+// MODEL
+// ======================================================
+
+module.exports = mongoose.model(
+  "User",
+  userSchema
+);

@@ -12,10 +12,14 @@ import {
   FaSyncAlt,
   FaMapMarkerAlt,
   FaSignOutAlt,
+  FaUserCircle,
 } from "react-icons/fa";
+
+import { useAuth } from "../../context/AuthContext";
 
 function AdminDashboard() {
   const navigate = useNavigate();
+  const { user, token, logout } = useAuth();
 
   // ==================================================
   // STATISTICS
@@ -28,11 +32,10 @@ function AdminDashboard() {
     pendingVerification: 0,
     housesAllotted: 0,
     totalAllotments: 0,
-    activeSchemes: 0,
     totalSchemes: 0,
-    upcomingSchemes: 0,
-    closedSchemes: 0,
-    completedSchemes: 0,
+    totalConfigurations: 0,
+    totalUnits: 0,
+    availableUnits: 0,
   });
 
   // ==================================================
@@ -42,7 +45,8 @@ function AdminDashboard() {
   const [applications, setApplications] = useState([]);
   const [schemes, setSchemes] = useState([]);
   const [officers, setOfficers] = useState([]);
-  const [applicationStatusCounts, setApplicationStatusCounts] = useState({});
+  const [applicationStatusCounts, setApplicationStatusCounts] =
+    useState({});
 
   // ==================================================
   // UI STATE
@@ -66,30 +70,30 @@ function AdminDashboard() {
 
       setError("");
 
-      const token = localStorage.getItem("token");
-
       if (!token) {
-        throw new Error("Authentication token not found. Please login again.");
+        throw new Error(
+          "Authentication token not found. Please login again."
+        );
       }
 
       const response = await fetch(
         "http://localhost:5000/api/admin/dashboard",
         {
           method: "GET",
-
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-
           cache: "no-store",
-        },
+        }
       );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || "Failed to fetch admin dashboard.");
+        throw new Error(
+          data.message || "Failed to fetch admin dashboard."
+        );
       }
 
       // ==================================================
@@ -97,27 +101,35 @@ function AdminDashboard() {
       // ==================================================
 
       setStatistics({
-        totalApplicants: data.statistics?.totalApplicants || 0,
+        totalApplicants:
+          data.statistics?.totalApplicants || 0,
 
-        totalOfficers: data.statistics?.totalOfficers || 0,
+        totalOfficers:
+          data.statistics?.totalOfficers || 0,
 
-        totalApplications: data.statistics?.totalApplications || 0,
+        totalApplications:
+          data.statistics?.totalApplications || 0,
 
-        pendingVerification: data.statistics?.pendingVerification || 0,
+        pendingVerification:
+          data.statistics?.pendingVerification || 0,
 
-        housesAllotted: data.statistics?.housesAllotted || 0,
+        housesAllotted:
+          data.statistics?.housesAllotted || 0,
 
-        totalAllotments: data.statistics?.totalAllotments || 0,
+        totalAllotments:
+          data.statistics?.totalAllotments || 0,
 
-        activeSchemes: data.statistics?.activeSchemes || 0,
+        totalSchemes:
+          data.statistics?.totalSchemes || 0,
 
-        totalSchemes: data.statistics?.totalSchemes || 0,
+        totalConfigurations:
+          data.statistics?.totalConfigurations || 0,
 
-        upcomingSchemes: data.statistics?.upcomingSchemes || 0,
+        totalUnits:
+          data.statistics?.totalUnits || 0,
 
-        closedSchemes: data.statistics?.closedSchemes || 0,
-
-        completedSchemes: data.statistics?.completedSchemes || 0,
+        availableUnits:
+          data.statistics?.availableUnits || 0,
       });
 
       // ==================================================
@@ -125,30 +137,48 @@ function AdminDashboard() {
       // ==================================================
 
       setApplications(
-        Array.isArray(data.recentApplications) ? data.recentApplications : [],
+        Array.isArray(data.recentApplications)
+          ? data.recentApplications
+          : []
       );
 
       // ==================================================
       // SCHEMES
       // ==================================================
 
-      setSchemes(Array.isArray(data.schemes) ? data.schemes : []);
+      setSchemes(
+        Array.isArray(data.schemes)
+          ? data.schemes
+          : []
+      );
 
       // ==================================================
       // OFFICERS
       // ==================================================
 
-      setOfficers(Array.isArray(data.officers) ? data.officers : []);
+      setOfficers(
+        Array.isArray(data.officers)
+          ? data.officers
+          : []
+      );
 
       // ==================================================
       // APPLICATION STATUS
       // ==================================================
 
-      setApplicationStatusCounts(data.applicationStatusCounts || {});
+      setApplicationStatusCounts(
+        data.applicationStatusCounts || {}
+      );
     } catch (error) {
-      console.error("Admin dashboard error:", error);
+      console.error(
+        "Admin dashboard error:",
+        error
+      );
 
-      setError(error.message || "Unable to load admin dashboard.");
+      setError(
+        error.message ||
+          "Unable to load admin dashboard."
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -160,6 +190,11 @@ function AdminDashboard() {
   // ==================================================
 
   useEffect(() => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
     fetchDashboard();
 
     const interval = setInterval(() => {
@@ -169,7 +204,16 @@ function AdminDashboard() {
     return () => {
       clearInterval(interval);
     };
-  }, []);
+  }, [token]);
+
+  // ==================================================
+  // LOGOUT
+  // ==================================================
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
 
   // ==================================================
   // STATUS FORMAT
@@ -183,11 +227,13 @@ function AdminDashboard() {
     return status
       .replaceAll("_", " ")
       .toLowerCase()
-      .replace(/\b\w/g, (char) => char.toUpperCase());
+      .replace(/\b\w/g, (char) =>
+        char.toUpperCase()
+      );
   };
 
   // ==================================================
-  // STATUS STYLE
+  // APPLICATION STATUS STYLE
   // ==================================================
 
   const getStatusStyle = (status) => {
@@ -201,45 +247,10 @@ function AdminDashboard() {
       case "ELIGIBLE":
         return "bg-blue-100 text-blue-700";
 
-      case "INELIGIBLE":
-        return "bg-red-100 text-red-700";
-
-      case "WAITING_LIST":
-        return "bg-purple-100 text-purple-700";
-
-      case "ALLOTMENT_OFFERED":
-        return "bg-indigo-100 text-indigo-700";
-
-      case "ALLOTTED":
-        return "bg-green-100 text-green-700";
-
       case "REJECTED":
         return "bg-red-100 text-red-700";
 
       case "WITHDRAWN":
-        return "bg-gray-100 text-gray-700";
-
-      default:
-        return "bg-gray-100 text-gray-700";
-    }
-  };
-
-  // ==================================================
-  // SCHEME STATUS STYLE
-  // ==================================================
-
-  const getSchemeStatusStyle = (status) => {
-    switch (status) {
-      case "OPEN":
-        return "bg-green-100 text-green-700";
-
-      case "UPCOMING":
-        return "bg-blue-100 text-blue-700";
-
-      case "CLOSED":
-        return "bg-orange-100 text-orange-700";
-
-      case "COMPLETED":
         return "bg-gray-100 text-gray-700";
 
       default:
@@ -256,11 +267,86 @@ function AdminDashboard() {
       return "-";
     }
 
-    return new Date(date).toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
+    return new Date(date).toLocaleDateString(
+      "en-IN",
+      {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }
+    );
+  };
+
+  // ==================================================
+  // CONFIGURATION SUMMARY
+  // ==================================================
+
+  const getConfigurationCount = (scheme) => {
+    return Array.isArray(scheme.configurations)
+      ? scheme.configurations.length
+      : 0;
+  };
+
+  const getTotalUnits = (scheme) => {
+    if (!Array.isArray(scheme.configurations)) {
+      return 0;
+    }
+
+    return scheme.configurations.reduce(
+      (total, configuration) =>
+        total +
+        Number(configuration.totalUnits || 0),
+      0
+    );
+  };
+
+  const getAvailableUnits = (scheme) => {
+    if (!Array.isArray(scheme.configurations)) {
+      return 0;
+    }
+
+    return scheme.configurations.reduce(
+      (total, configuration) =>
+        total +
+        Number(configuration.availableUnits || 0),
+      0
+    );
+  };
+
+  const getConfigurationStatus = (configuration) => {
+    if (!configuration) {
+      return "Not Configured";
+    }
+
+    const availableUnits = Number(
+      configuration.availableUnits || 0
+    );
+
+    const totalUnits = Number(
+      configuration.totalUnits || 0
+    );
+
+    if (availableUnits <= 0) {
+      return "Fully Allocated";
+    }
+
+    if (!configuration.allotmentDate) {
+      return "Not Scheduled";
+    }
+
+    const allotmentDate = new Date(
+      configuration.allotmentDate
+    );
+
+    if (allotmentDate > new Date()) {
+      return "Upcoming";
+    }
+
+    if (totalUnits > availableUnits) {
+      return "Partially Allocated";
+    }
+
+    return "Ready";
   };
 
   // ==================================================
@@ -309,25 +395,13 @@ function AdminDashboard() {
     },
 
     {
-      title: "Active Schemes",
-      value: statistics.activeSchemes,
+      title: "Total Schemes",
+      value: statistics.totalSchemes,
       icon: <FaBuilding />,
       iconBg: "bg-pink-50",
       iconColor: "text-pink-600",
     },
   ];
-
-  // ------------------------------------------
-  // LOGOUT
-  // ------------------------------------------
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    localStorage.removeItem("role");
-
-    navigate("/login");
-  };
 
   // ==================================================
   // LOADING
@@ -339,7 +413,9 @@ function AdminDashboard() {
         <div className="text-center">
           <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
 
-          <p className="text-gray-500">Loading admin dashboard...</p>
+          <p className="text-gray-500">
+            Loading admin dashboard...
+          </p>
         </div>
       </div>
     );
@@ -351,51 +427,84 @@ function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+
       {/* ==================================================
           HEADER
       ================================================== */}
 
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
+
+          {/* BRAND */}
+
           <div>
             <h1 className="text-xl font-bold text-blue-600">
               State Housing Board
             </h1>
 
-            <p className="text-xs text-gray-500">Administration Portal</p>
+            <p className="text-xs text-gray-500">
+              Administration Portal
+            </p>
           </div>
 
+          {/* ADMIN CONTROLS */}
+
           <div className="flex items-center gap-4">
+
+            {/* REFRESH */}
+
             <button
-              onClick={() => fetchDashboard(false)}
+              onClick={() =>
+                fetchDashboard(false)
+              }
               disabled={refreshing}
               className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 disabled:opacity-50"
             >
-              <FaSyncAlt className={refreshing ? "animate-spin" : ""} />
+              <FaSyncAlt
+                className={
+                  refreshing
+                    ? "animate-spin"
+                    : ""
+                }
+              />
 
-              {refreshing ? "Refreshing..." : "Refresh"}
+              {refreshing
+                ? "Refreshing..."
+                : "Refresh"}
             </button>
 
-            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
-              <FaUserTie />
-            </div>
+            {/* PROFILE */}
 
-            <div>
-              <p className="text-sm font-medium text-gray-800">Admin</p>
+            <Link
+              to="/profile"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 transition"
+            >
+              <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center">
+                <FaUserCircle size={22} />
+              </div>
 
-              <p className="text-xs text-gray-500">Administrator</p>
-            </div>
+              <div className="hidden sm:block">
+                <p className="text-sm font-medium text-gray-800">
+                  {user?.name || "Admin"}
+                </p>
 
-            {/* =================================
-                        LOGOUT
-                ================================= */}
+                <p className="text-xs text-gray-500">
+                  Administrator
+                </p>
+              </div>
+            </Link>
+
+            {/* LOGOUT */}
+
             <button
               onClick={handleLogout}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-red-500 hover:bg-red-50 transition"
             >
               <FaSignOutAlt />
+
               <span>Logout</span>
             </button>
+
           </div>
         </div>
       </header>
@@ -405,13 +514,17 @@ function AdminDashboard() {
       ================================================== */}
 
       <main className="max-w-7xl mx-auto px-6 py-8">
+
         {/* HEADING */}
 
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-800">Admin Dashboard</h2>
+          <h2 className="text-2xl font-bold text-gray-800">
+            Admin Dashboard
+          </h2>
 
           <p className="text-gray-500 mt-1">
-            Monitor users, officers, applications, schemes and allotments.
+            Monitor users, officers, applications,
+            schemes and allotments.
           </p>
         </div>
 
@@ -428,14 +541,18 @@ function AdminDashboard() {
         ================================================== */}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
+
           {statisticCards.map((card) => (
             <div
               key={card.title}
               className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition"
             >
               <div className="flex justify-between items-start">
+
                 <div>
-                  <p className="text-sm text-gray-500">{card.title}</p>
+                  <p className="text-sm text-gray-500">
+                    {card.title}
+                  </p>
 
                   <h3 className="text-2xl font-bold text-gray-800 mt-2">
                     {card.value}
@@ -447,9 +564,11 @@ function AdminDashboard() {
                 >
                   {card.icon}
                 </div>
+
               </div>
             </div>
           ))}
+
         </div>
 
         {/* ==================================================
@@ -457,60 +576,79 @@ function AdminDashboard() {
         ================================================== */}
 
         <div className="mt-8">
+
           <h3 className="text-lg font-semibold text-gray-800 mb-4">
             Quick Actions
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+
+            {/* CREATE SCHEME */}
+
             <Link
               to="/admin/schemes/create"
               className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-blue-200 transition group"
             >
               <div className="flex items-start gap-4">
+
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition">
                   <FaBuilding size={20} />
                 </div>
 
                 <div className="flex-1">
+
                   <div className="flex items-center justify-between">
+
                     <h4 className="font-semibold text-gray-800">
                       Create Housing Scheme
                     </h4>
 
                     <FaPlus className="text-gray-400 group-hover:text-blue-600" />
+
                   </div>
 
                   <p className="text-sm text-gray-500 mt-2">
-                    Create a new government housing scheme.
+                    Create a common government housing
+                    scheme and define its eligibility.
                   </p>
+
                 </div>
               </div>
             </Link>
+
+            {/* CREATE OFFICER */}
 
             <Link
               to="/admin/officers/create"
               className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-md hover:border-indigo-200 transition group"
             >
               <div className="flex items-start gap-4">
+
                 <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition">
                   <FaUserTie size={20} />
                 </div>
 
                 <div className="flex-1">
+
                   <div className="flex items-center justify-between">
+
                     <h4 className="font-semibold text-gray-800">
                       Create Officer
                     </h4>
 
                     <FaPlus className="text-gray-400 group-hover:text-indigo-600" />
+
                   </div>
 
                   <p className="text-sm text-gray-500 mt-2">
-                    Create an officer account and assign a district.
+                    Create an officer account and assign
+                    a district.
                   </p>
+
                 </div>
               </div>
             </Link>
+
           </div>
         </div>
 
@@ -519,9 +657,11 @@ function AdminDashboard() {
         ================================================== */}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
+
           {/* APPLICATION STATUS */}
 
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-gray-800">
                 Application Status
@@ -533,15 +673,30 @@ function AdminDashboard() {
             </div>
 
             <div className="space-y-4">
-              {Object.entries(applicationStatusCounts).map(
-                ([status, count]) => {
-                  const total = statistics.totalApplications || 1;
 
-                  const percentage = (count / total) * 100;
+              {Object.keys(
+                applicationStatusCounts
+              ).length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No application status data available.
+                </p>
+              ) : (
+                Object.entries(
+                  applicationStatusCounts
+                ).map(([status, count]) => {
+
+                  const total =
+                    statistics.totalApplications ||
+                    1;
+
+                  const percentage =
+                    (count / total) * 100;
 
                   return (
                     <div key={status}>
+
                       <div className="flex justify-between mb-2">
+
                         <span className="text-sm text-gray-600">
                           {formatStatus(status)}
                         </span>
@@ -549,70 +704,91 @@ function AdminDashboard() {
                         <span className="text-sm font-semibold text-gray-800">
                           {count}
                         </span>
+
                       </div>
 
                       <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden">
+
                         <div
                           className="h-full bg-blue-500 rounded-full transition-all"
                           style={{
-                            width: `${Math.min(percentage, 100)}%`,
+                            width: `${Math.min(
+                              percentage,
+                              100
+                            )}%`,
                           }}
                         />
+
                       </div>
+
                     </div>
                   );
-                },
+                })
               )}
+
             </div>
           </div>
 
-          {/* SCHEME SUMMARY */}
+          {/* HOUSING INVENTORY */}
 
           <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+
             <div className="mb-6">
               <h3 className="text-lg font-semibold text-gray-800">
-                Housing Scheme Overview
+                Housing Overview
               </h3>
 
               <p className="text-sm text-gray-500 mt-1">
-                Current scheme distribution.
+                Common schemes and district housing
+                configurations.
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
+
               <div className="bg-blue-50 rounded-xl p-5">
-                <p className="text-sm text-gray-600">Total Schemes</p>
+                <p className="text-sm text-gray-600">
+                  Total Schemes
+                </p>
 
                 <p className="text-2xl font-bold text-blue-700 mt-1">
                   {statistics.totalSchemes}
                 </p>
               </div>
 
+              <div className="bg-indigo-50 rounded-xl p-5">
+                <p className="text-sm text-gray-600">
+                  District Configurations
+                </p>
+
+                <p className="text-2xl font-bold text-indigo-700 mt-1">
+                  {statistics.totalConfigurations}
+                </p>
+              </div>
+
               <div className="bg-green-50 rounded-xl p-5">
-                <p className="text-sm text-gray-600">Open Schemes</p>
+                <p className="text-sm text-gray-600">
+                  Total Units
+                </p>
 
                 <p className="text-2xl font-bold text-green-700 mt-1">
-                  {statistics.activeSchemes}
+                  {statistics.totalUnits}
                 </p>
               </div>
 
               <div className="bg-yellow-50 rounded-xl p-5">
-                <p className="text-sm text-gray-600">Upcoming</p>
+                <p className="text-sm text-gray-600">
+                  Available Units
+                </p>
 
                 <p className="text-2xl font-bold text-yellow-700 mt-1">
-                  {statistics.upcomingSchemes}
+                  {statistics.availableUnits}
                 </p>
               </div>
 
-              <div className="bg-gray-100 rounded-xl p-5">
-                <p className="text-sm text-gray-600">Completed</p>
-
-                <p className="text-2xl font-bold text-gray-700 mt-1">
-                  {statistics.completedSchemes}
-                </p>
-              </div>
             </div>
           </div>
+
         </div>
 
         {/* ==================================================
@@ -620,14 +796,17 @@ function AdminDashboard() {
         ================================================== */}
 
         <div className="mt-8 bg-white border border-gray-200 rounded-xl shadow-sm">
+
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+
             <div>
               <h3 className="text-lg font-semibold text-gray-800">
                 Housing Schemes
               </h3>
 
               <p className="text-sm text-gray-500 mt-1">
-                All housing schemes created by the administration.
+                Common housing schemes created by the
+                administration.
               </p>
             </div>
 
@@ -638,31 +817,55 @@ function AdminDashboard() {
               <FaPlus />
               New Scheme
             </Link>
+
           </div>
 
           <div className="overflow-x-auto">
+
             <table className="w-full text-sm">
+
               <thead className="bg-gray-50">
+
                 <tr className="text-gray-500">
-                  <th className="text-left px-6 py-3 font-medium">Scheme</th>
+
+                  <th className="text-left px-6 py-3 font-medium">
+                    Scheme
+                  </th>
 
                   <th className="text-left px-6 py-3 font-medium">
                     House Model
                   </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Price</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Price
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Status</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Districts
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Created</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Units
+                  </th>
+
+                  <th className="text-left px-6 py-3 font-medium">
+                    Available
+                  </th>
+
+                  <th className="text-left px-6 py-3 font-medium">
+                    Created
+                  </th>
+
                 </tr>
+
               </thead>
 
               <tbody>
+
                 {schemes.length === 0 ? (
                   <tr>
                     <td
-                      colSpan="5"
+                      colSpan="7"
                       className="px-6 py-10 text-center text-gray-500"
                     >
                       No housing schemes found.
@@ -674,14 +877,19 @@ function AdminDashboard() {
                       key={scheme._id}
                       className="border-t border-gray-100 hover:bg-gray-50"
                     >
+
                       <td className="px-6 py-4">
+
                         <p className="font-medium text-gray-800">
                           {scheme.schemeName}
                         </p>
 
                         <p className="text-xs text-gray-400 mt-1">
-                          {scheme.eligibleIncomeCategories?.join(", ")}
+                          {scheme.eligibleIncomeCategories?.join(
+                            ", "
+                          ) || "-"}
                         </p>
+
                       </td>
 
                       <td className="px-6 py-4 text-gray-600">
@@ -689,27 +897,40 @@ function AdminDashboard() {
                       </td>
 
                       <td className="px-6 py-4 text-gray-600">
-                        ₹{Number(scheme.price || 0).toLocaleString("en-IN")}
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${getSchemeStatusStyle(
-                            scheme.status,
-                          )}`}
-                        >
-                          {scheme.status}
-                        </span>
+                        ₹
+                        {Number(
+                          scheme.price || 0
+                        ).toLocaleString("en-IN")}
                       </td>
 
                       <td className="px-6 py-4 text-gray-600">
-                        {formatDate(scheme.createdAt)}
+                        {getConfigurationCount(
+                          scheme
+                        )}
                       </td>
+
+                      <td className="px-6 py-4 text-gray-600">
+                        {getTotalUnits(scheme)}
+                      </td>
+
+                      <td className="px-6 py-4 text-green-700 font-medium">
+                        {getAvailableUnits(scheme)}
+                      </td>
+
+                      <td className="px-6 py-4 text-gray-600">
+                        {formatDate(
+                          scheme.createdAt
+                        )}
+                      </td>
+
                     </tr>
                   ))
                 )}
+
               </tbody>
+
             </table>
+
           </div>
         </div>
 
@@ -718,7 +939,9 @@ function AdminDashboard() {
         ================================================== */}
 
         <div className="mt-8 bg-white border border-gray-200 rounded-xl shadow-sm">
+
           <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+
             <div>
               <h3 className="text-lg font-semibold text-gray-800">
                 District Officers
@@ -736,25 +959,43 @@ function AdminDashboard() {
               <FaPlus />
               New Officer
             </Link>
+
           </div>
 
           <div className="overflow-x-auto">
+
             <table className="w-full text-sm">
+
               <thead className="bg-gray-50">
+
                 <tr className="text-gray-500">
-                  <th className="text-left px-6 py-3 font-medium">Officer</th>
 
-                  <th className="text-left px-6 py-3 font-medium">Phone</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Officer
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">District</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Phone
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Status</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    District
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Created</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Status
+                  </th>
+
+                  <th className="text-left px-6 py-3 font-medium">
+                    Created
+                  </th>
+
                 </tr>
+
               </thead>
 
               <tbody>
+
                 {officers.length === 0 ? (
                   <tr>
                     <td
@@ -770,13 +1011,17 @@ function AdminDashboard() {
                       key={officer._id}
                       className="border-t border-gray-100 hover:bg-gray-50"
                     >
+
                       <td className="px-6 py-4">
+
                         <div className="flex items-center gap-3">
+
                           <div className="w-9 h-9 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center">
                             <FaUserTie />
                           </div>
 
                           <div>
+
                             <p className="font-medium text-gray-800">
                               {officer.name}
                             </p>
@@ -784,8 +1029,11 @@ function AdminDashboard() {
                             <p className="text-xs text-gray-400">
                               {officer.email}
                             </p>
+
                           </div>
+
                         </div>
+
                       </td>
 
                       <td className="px-6 py-4 text-gray-600">
@@ -793,13 +1041,19 @@ function AdminDashboard() {
                       </td>
 
                       <td className="px-6 py-4">
+
                         <div className="flex items-center gap-2 text-gray-600">
+
                           <FaMapMarkerAlt className="text-gray-400" />
+
                           {officer.district || "-"}
+
                         </div>
+
                       </td>
 
                       <td className="px-6 py-4">
+
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-medium ${
                             officer.isActive
@@ -807,18 +1061,27 @@ function AdminDashboard() {
                               : "bg-red-100 text-red-700"
                           }`}
                         >
-                          {officer.isActive ? "Active" : "Inactive"}
+                          {officer.isActive
+                            ? "Active"
+                            : "Inactive"}
                         </span>
+
                       </td>
 
                       <td className="px-6 py-4 text-gray-600">
-                        {formatDate(officer.createdAt)}
+                        {formatDate(
+                          officer.createdAt
+                        )}
                       </td>
+
                     </tr>
                   ))
                 )}
+
               </tbody>
+
             </table>
+
           </div>
         </div>
 
@@ -827,7 +1090,9 @@ function AdminDashboard() {
         ================================================== */}
 
         <div className="mt-8 bg-white border border-gray-200 rounded-xl shadow-sm">
+
           <div className="p-6 border-b border-gray-100">
+
             <h3 className="text-lg font-semibold text-gray-800">
               Recent Applications
             </h3>
@@ -835,82 +1100,129 @@ function AdminDashboard() {
             <p className="text-sm text-gray-500 mt-1">
               Latest applications submitted to the portal.
             </p>
+
           </div>
 
           <div className="overflow-x-auto">
+
             <table className="w-full text-sm">
+
               <thead className="bg-gray-50">
+
                 <tr className="text-gray-500">
+
                   <th className="text-left px-6 py-3 font-medium">
                     Application ID
                   </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Applicant</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Applicant
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Scheme</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Scheme
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Date</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    District
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Status</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Date
+                  </th>
+
+                  <th className="text-left px-6 py-3 font-medium">
+                    Status
+                  </th>
+
                 </tr>
+
               </thead>
 
               <tbody>
+
                 {applications.length === 0 ? (
                   <tr>
                     <td
-                      colSpan="5"
+                      colSpan="6"
                       className="px-6 py-10 text-center text-gray-500"
                     >
                       No applications found.
                     </td>
                   </tr>
                 ) : (
-                  applications.map((application) => (
-                    <tr
-                      key={application._id}
-                      className="border-t border-gray-100 hover:bg-gray-50"
-                    >
-                      <td className="px-6 py-4 font-medium text-gray-800">
-                        {application.applicationNumber || application._id}
-                      </td>
+                  applications.map(
+                    (application) => (
+                      <tr
+                        key={application._id}
+                        className="border-t border-gray-100 hover:bg-gray-50"
+                      >
 
-                      <td className="px-6 py-4">
-                        <p className="font-medium text-gray-700">
-                          {application.applicantId?.name || "Unknown"}
-                        </p>
+                        <td className="px-6 py-4 font-medium text-gray-800">
+                          {application.applicationNumber ||
+                            application._id}
+                        </td>
 
-                        <p className="text-xs text-gray-400 mt-1">
-                          {application.applicantId?.email || "-"}
-                        </p>
-                      </td>
+                        <td className="px-6 py-4">
 
-                      <td className="px-6 py-4 text-gray-600">
-                        {application.schemeId?.schemeName || "Unknown"}
-                      </td>
+                          <p className="font-medium text-gray-700">
+                            {application
+                              .applicantId?.name ||
+                              "Unknown"}
+                          </p>
 
-                      <td className="px-6 py-4 text-gray-600">
-                        {formatDate(
-                          application.createdAt || application.submittedAt,
-                        )}
-                      </td>
+                          <p className="text-xs text-gray-400 mt-1">
+                            {application
+                              .applicantId?.email ||
+                              "-"}
+                          </p>
 
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusStyle(
-                            application.status,
-                          )}`}
-                        >
-                          {formatStatus(application.status)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+
+                        <td className="px-6 py-4 text-gray-600">
+                          {application
+                            .schemeId?.schemeName ||
+                            "Unknown"}
+                        </td>
+
+                        <td className="px-6 py-4 text-gray-600">
+                          {application.district ||
+                            "-"}
+                        </td>
+
+                        <td className="px-6 py-4 text-gray-600">
+                          {formatDate(
+                            application.createdAt ||
+                              application.submittedAt
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4">
+
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusStyle(
+                              application.status
+                            )}`}
+                          >
+                            {formatStatus(
+                              application.status
+                            )}
+                          </span>
+
+                        </td>
+
+                      </tr>
+                    )
+                  )
                 )}
+
               </tbody>
+
             </table>
+
           </div>
         </div>
+
       </main>
     </div>
   );

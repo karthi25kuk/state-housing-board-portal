@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import SchemeCard from "../../components/dashboard/SchemeCard";
 import { getOpenSchemes } from "../../services/schemeService";
+import { getMyApplications } from "../../services/applicationService";
 
 function ApplicantSchemes() {
   const [schemes, setSchemes] = useState([]);
@@ -9,6 +10,10 @@ function ApplicantSchemes() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // ==========================================
+  // FETCH DATA
+  // ==========================================
 
   useEffect(() => {
     const fetchData = async () => {
@@ -24,44 +29,21 @@ function ApplicantSchemes() {
         }
 
         // ==========================================
-        // FETCH OPEN SCHEMES
+        // FETCH ALL COMMON SCHEMES + MY APPLICATIONS
         // ==========================================
 
-        const schemesData = await getOpenSchemes(token);
-
-        // ==========================================
-        // FETCH APPLICANT'S APPLICATIONS
-        // ==========================================
-
-        const applicationsResponse = await fetch(
-          "http://localhost:5000/api/applications/my",
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-          }
-        );
-
-        const applicationsData =
-          await applicationsResponse.json();
-
-        if (!applicationsResponse.ok) {
-          throw new Error(
-            applicationsData.message ||
-              "Failed to fetch your applications."
-          );
-        }
+        const [schemesData, applicationsData] = await Promise.all([
+          getOpenSchemes(token),
+          getMyApplications(token),
+        ]);
 
         setSchemes(schemesData || []);
-        setApplications(applicationsData.applications || []);
+        setApplications(applicationsData || []);
       } catch (error) {
         console.error("Fetch housing schemes error:", error);
 
         setError(
-          error.message ||
-            "Unable to load housing schemes."
+          error.message || "Unable to load housing schemes."
         );
       } finally {
         setLoading(false);
@@ -96,7 +78,7 @@ function ApplicantSchemes() {
       <div className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-6xl mx-auto">
           <p className="text-gray-600">
-            Loading available housing schemes...
+            Loading housing schemes...
           </p>
         </div>
       </div>
@@ -111,7 +93,6 @@ function ApplicantSchemes() {
     return (
       <div className="min-h-screen bg-slate-50 p-6">
         <div className="max-w-6xl mx-auto">
-
           <Link
             to="/applicant"
             className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -122,7 +103,6 @@ function ApplicantSchemes() {
           <div className="mt-6 bg-red-50 border border-red-200 text-red-600 p-5 rounded-xl">
             {error}
           </div>
-
         </div>
       </div>
     );
@@ -134,13 +114,13 @@ function ApplicantSchemes() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
-
       <div className="max-w-6xl mx-auto">
 
-        {/* HEADER */}
+        {/* ==========================================
+            HEADER
+        ========================================== */}
 
         <div className="mb-8">
-
           <Link
             to="/applicant"
             className="text-blue-600 hover:text-blue-800 text-sm font-medium"
@@ -153,63 +133,46 @@ function ApplicantSchemes() {
           </h1>
 
           <p className="text-gray-500 mt-2">
-            View housing schemes currently open for applications.
+            View and apply for housing schemes created by the
+            State Housing Board.
           </p>
 
+          {schemes.length > 0 && (
+            <p className="text-sm text-gray-500 mt-2">
+              Showing {schemes.length}{" "}
+              {schemes.length === 1 ? "scheme" : "schemes"}.
+            </p>
+          )}
         </div>
 
-        {/* EMPTY STATE */}
+        {/* ==========================================
+            EMPTY STATE
+        ========================================== */}
 
         {schemes.length === 0 && (
           <div className="bg-white border border-gray-200 rounded-xl p-10 text-center">
-
             <h2 className="text-xl font-semibold text-gray-700">
-              No Open Schemes
+              No Housing Schemes Available
             </h2>
 
             <p className="text-gray-500 mt-2">
-              There are currently no housing schemes open
-              for applications.
+              There are currently no housing schemes created
+              by the State Housing Board.
             </p>
-
           </div>
         )}
 
-        {/* SCHEME CARDS */}
+        {/* ==========================================
+            SCHEME CARDS
+        ========================================== */}
 
         {schemes.length > 0 && (
-          <>
-            <div className="mb-5">
-              <p className="text-sm text-gray-500">
-                {schemes.length}{" "}
-                {schemes.length === 1
-                  ? "scheme"
-                  : "schemes"}{" "}
-                available
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-
-              {schemes.map((scheme) => (
-
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {schemes.map((scheme) => {
+              return (
                 <SchemeCard
                   key={scheme._id}
-
                   name={scheme.schemeName}
-
-                  location={`${scheme.location}, ${scheme.district}`}
-
-                  units={scheme.availableUnits}
-
-                  deadline={
-                    scheme.applicationEndDate
-                      ? new Date(
-                          scheme.applicationEndDate
-                        ).toLocaleDateString("en-IN")
-                      : "-"
-                  }
-
                   category={
                     scheme.eligibleIncomeCategories?.length > 0
                       ? scheme.eligibleIncomeCategories.join(", ")
@@ -218,20 +181,22 @@ function ApplicantSchemes() {
 
                   schemeId={scheme._id}
 
-                  // IMPORTANT
-                  alreadyApplied={hasApplied(
-                    scheme._id
-                  )}
+                  alreadyApplied={hasApplied(scheme._id)}
+                  maximumAnnualIncome={
+                    scheme.maximumAnnualIncome
+                  }
+
+                  houseModel={scheme.houseModel}
+
+                  price={scheme.price}
+
+                  description={scheme.description}
                 />
-
-              ))}
-
-            </div>
-          </>
+              );
+            })}
+          </div>
         )}
-
       </div>
-
     </div>
   );
 }

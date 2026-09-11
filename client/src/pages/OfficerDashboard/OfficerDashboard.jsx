@@ -1,12 +1,20 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
-import { FaBuilding, FaCheckCircle, FaClock, FaFileAlt } from "react-icons/fa";
+import {
+  FaBuilding,
+  FaCheckCircle,
+  FaClock,
+  FaFileAlt,
+  FaUser,
+  FaSignOutAlt,
+} from "react-icons/fa";
 
 import { useAuth } from "../../context/AuthContext";
 
 function OfficerDashboard() {
-  const { token, user } = useAuth();
+  const { token, user, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [schemes, setSchemes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +26,11 @@ function OfficerDashboard() {
 
   useEffect(() => {
     const fetchSchemes = async () => {
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         setError("");
@@ -25,31 +38,55 @@ function OfficerDashboard() {
         const response = await fetch(
           "http://localhost:5000/api/schemes/officer",
           {
+            method: "GET",
             headers: {
               Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
             },
-          },
+          }
         );
 
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.message || "Failed to fetch schemes.");
+          throw new Error(
+            data.message || "Failed to fetch housing schemes."
+          );
         }
 
         setSchemes(data.schemes || []);
       } catch (error) {
         console.error("Fetch officer schemes error:", error);
-        setError(error.message);
+
+        setError(
+          error.message || "Failed to fetch housing schemes."
+        );
       } finally {
         setLoading(false);
       }
     };
 
-    if (token) {
-      fetchSchemes();
-    }
+    fetchSchemes();
   }, [token]);
+
+  // ==========================================
+  // OFFICER CONFIGURATIONS
+  // ==========================================
+
+  const configurations = useMemo(() => {
+    return schemes.flatMap((scheme) => {
+      const schemeConfigurations = Array.isArray(
+        scheme.configurations
+      )
+        ? scheme.configurations
+        : [];
+
+      return schemeConfigurations.map((configuration) => ({
+        ...configuration,
+        scheme,
+      }));
+    });
+  }, [schemes]);
 
   // ==========================================
   // STATISTICS
@@ -57,23 +94,24 @@ function OfficerDashboard() {
 
   const totalSchemes = schemes.length;
 
-  const openSchemes = schemes.filter(
-    (scheme) => scheme.status === "OPEN",
-  ).length;
+  const totalConfigurations = configurations.length;
 
-  const upcomingSchemes = schemes.filter(
-    (scheme) => scheme.status === "UPCOMING",
-  ).length;
-
-  const totalUnits = schemes.reduce(
-    (total, scheme) => total + (Number(scheme.totalUnits) || 0),
-    0,
+  const totalUnits = configurations.reduce(
+    (total, configuration) =>
+      total + (Number(configuration.totalUnits) || 0),
+    0
   );
 
-  const availableUnits = schemes.reduce(
-    (total, scheme) => total + (Number(scheme.availableUnits) || 0),
-    0,
+  const availableUnits = configurations.reduce(
+    (total, configuration) =>
+      total + (Number(configuration.availableUnits) || 0),
+    0
   );
+
+  const configurationsWithUnits = configurations.filter(
+    (configuration) =>
+      Number(configuration.availableUnits || 0) > 0
+  ).length;
 
   // ==========================================
   // DATE FORMATTER
@@ -82,7 +120,13 @@ function OfficerDashboard() {
   const formatDate = (date) => {
     if (!date) return "-";
 
-    return new Date(date).toLocaleDateString("en-IN", {
+    const parsedDate = new Date(date);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      return "-";
+    }
+
+    return parsedDate.toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
       year: "numeric",
@@ -90,32 +134,67 @@ function OfficerDashboard() {
   };
 
   // ==========================================
-  // STATUS STYLE
+  // CONFIGURATION STATUS
   // ==========================================
 
-  const getStatusStyle = (status) => {
-    switch (status) {
-      case "OPEN":
-        return "bg-green-100 text-green-700";
+  const getConfigurationStatus = (configuration) => {
+    const available = Number(
+      configuration.availableUnits || 0
+    );
 
-      case "UPCOMING":
-        return "bg-yellow-100 text-yellow-700";
-
-      case "CLOSED":
-        return "bg-gray-100 text-gray-700";
-
-      default:
-        return "bg-gray-100 text-gray-600";
+    if (available <= 0) {
+      return {
+        label: "Fully Allocated",
+        className: "bg-red-100 text-red-700",
+      };
     }
+
+    if (!configuration.allotmentDate) {
+      return {
+        label: "Not Scheduled",
+        className: "bg-gray-100 text-gray-700",
+      };
+    }
+
+    const allotmentDate = new Date(
+      configuration.allotmentDate
+    );
+
+    if (allotmentDate > new Date()) {
+      return {
+        label: "Upcoming",
+        className: "bg-yellow-100 text-yellow-700",
+      };
+    }
+
+    return {
+      label: "Ready",
+      className: "bg-green-100 text-green-700",
+    };
   };
+
+  // ==========================================
+  // LOGOUT
+  // ==========================================
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  // ==========================================
+  // RENDER
+  // ==========================================
 
   return (
     <div className="min-h-screen bg-slate-50 p-6">
+
       {/* ==========================================
           HEADER
       ========================================== */}
 
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+
         <div>
           <h1 className="text-2xl font-bold text-gray-800">
             Officer Dashboard
@@ -132,12 +211,38 @@ function OfficerDashboard() {
           )}
         </div>
 
-        <Link
-          to="/officer/create-scheme"
-          className="inline-flex items-center justify-center bg-blue-600 text-white px-5 py-3 rounded-lg hover:bg-blue-700 transition"
-        >
-          + Create Housing Scheme
-        </Link>
+        {/* ==========================================
+            PROFILE + LOGOUT
+        ========================================== */}
+
+        <div className="flex items-center gap-3">
+
+          <Link
+            to="/profile"
+            className="inline-flex items-center justify-center gap-2 border border-gray-300 bg-white text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 transition"
+          >
+            <FaUser />
+            Profile
+          </Link>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="inline-flex items-center justify-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-lg hover:bg-red-700 transition"
+          >
+            <FaSignOutAlt />
+            Logout
+          </button>
+
+          <Link
+            to="/officer/schemes"
+            className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-5 py-2.5 rounded-lg hover:bg-blue-700 transition"
+          >
+            <FaBuilding />
+            Manage Housing Schemes
+          </Link>
+
+        </div>
       </div>
 
       {/* ==========================================
@@ -155,12 +260,17 @@ function OfficerDashboard() {
       ========================================== */}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-8">
+
         {/* Total Schemes */}
 
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+
           <div className="flex items-center justify-between">
+
             <div>
-              <p className="text-sm text-gray-500">Total Schemes</p>
+              <p className="text-sm text-gray-500">
+                Total Schemes
+              </p>
 
               <h2 className="text-2xl font-bold text-gray-800 mt-1">
                 {loading ? "..." : totalSchemes}
@@ -170,63 +280,81 @@ function OfficerDashboard() {
             <div className="w-11 h-11 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
               <FaBuilding />
             </div>
+
           </div>
 
           <p className="text-xs text-gray-500 mt-4">
-            Schemes created in your district
+            Common schemes available in your district
           </p>
+
         </div>
 
-        {/* Open Schemes */}
+        {/* Configurations */}
 
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+
           <div className="flex items-center justify-between">
+
             <div>
-              <p className="text-sm text-gray-500">Open Schemes</p>
+              <p className="text-sm text-gray-500">
+                District Configurations
+              </p>
 
               <h2 className="text-2xl font-bold text-gray-800 mt-1">
-                {loading ? "..." : openSchemes}
+                {loading ? "..." : totalConfigurations}
               </h2>
             </div>
 
             <div className="w-11 h-11 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
               <FaCheckCircle />
             </div>
+
           </div>
 
           <p className="text-xs text-gray-500 mt-4">
-            Currently accepting applications
+            Housing configurations managed by you
           </p>
+
         </div>
 
-        {/* Upcoming Schemes */}
+        {/* Total Units */}
 
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+
           <div className="flex items-center justify-between">
+
             <div>
-              <p className="text-sm text-gray-500">Upcoming Schemes</p>
+              <p className="text-sm text-gray-500">
+                Total Units
+              </p>
 
               <h2 className="text-2xl font-bold text-gray-800 mt-1">
-                {loading ? "..." : upcomingSchemes}
+                {loading ? "..." : totalUnits}
               </h2>
             </div>
 
             <div className="w-11 h-11 rounded-lg bg-yellow-50 text-yellow-600 flex items-center justify-center">
               <FaClock />
             </div>
+
           </div>
 
           <p className="text-xs text-gray-500 mt-4">
-            Schemes awaiting publication
+            Housing units configured in your district
           </p>
+
         </div>
 
         {/* Available Units */}
 
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+
           <div className="flex items-center justify-between">
+
             <div>
-              <p className="text-sm text-gray-500">Available Units</p>
+              <p className="text-sm text-gray-500">
+                Available Units
+              </p>
 
               <h2 className="text-2xl font-bold text-gray-800 mt-1">
                 {loading ? "..." : availableUnits}
@@ -236,27 +364,32 @@ function OfficerDashboard() {
             <div className="w-11 h-11 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center">
               <FaFileAlt />
             </div>
+
           </div>
 
           <p className="text-xs text-gray-500 mt-4">
-            {totalUnits} total housing units
+            {configurationsWithUnits} configurations have available units
           </p>
+
         </div>
+
       </div>
 
       {/* ==========================================
-          MY SCHEMES
+          MY HOUSING CONFIGURATIONS
       ========================================== */}
 
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm mt-8">
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-6 border-b border-gray-100">
+
           <div>
             <h2 className="text-lg font-semibold text-gray-800">
-              My Housing Schemes
+              My Housing Configurations
             </h2>
 
             <p className="text-sm text-gray-500 mt-1">
-              Housing schemes created by you.
+              District-specific housing configurations managed by you.
             </p>
           </div>
 
@@ -266,118 +399,196 @@ function OfficerDashboard() {
           >
             View All →
           </Link>
+
         </div>
 
         {/* Loading */}
 
         {loading && (
           <div className="p-6 text-center text-gray-500">
-            Loading housing schemes...
+            Loading housing configurations...
           </div>
         )}
 
-        {/* No schemes */}
+        {/* No configurations */}
 
-        {!loading && schemes.length === 0 && (
+        {!loading && configurations.length === 0 && (
           <div className="p-8 text-center">
+
             <FaBuilding className="mx-auto text-3xl text-gray-300" />
 
             <h3 className="text-lg font-semibold text-gray-800 mt-3">
-              No schemes created yet
+              No configurations found
             </h3>
 
             <p className="text-sm text-gray-500 mt-1">
-              Create your first housing scheme to get started.
+              No housing configuration has been created for your district yet.
             </p>
 
             <Link
-              to="/officer/create-scheme"
+              to="/officer/schemes"
               className="inline-block mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
             >
-              Create Scheme
+              Manage Schemes
             </Link>
+
           </div>
         )}
 
-        {/* Schemes */}
+        {/* Configurations */}
 
-        {!loading && schemes.length > 0 && (
+        {!loading && configurations.length > 0 && (
           <div className="overflow-x-auto">
+
             <table className="w-full text-sm">
+
               <thead className="bg-gray-50 text-gray-500">
+
                 <tr>
-                  <th className="text-left px-6 py-3 font-medium">Scheme</th>
 
-                  <th className="text-left px-6 py-3 font-medium">Location</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Scheme
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Units</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Location
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Available</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Units
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Deadline</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Available
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Status</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Allotment Date
+                  </th>
 
-                  <th className="text-left px-6 py-3 font-medium">Action</th>
+                  <th className="text-left px-6 py-3 font-medium">
+                    Status
+                  </th>
+
+                  <th className="text-left px-6 py-3 font-medium">
+                    Action
+                  </th>
+
                 </tr>
+
               </thead>
 
               <tbody>
-                {schemes.slice(0, 5).map((scheme) => (
-                  <tr
-                    key={scheme._id}
-                    className="border-t border-gray-100 hover:bg-gray-50"
-                  >
-                    <td className="px-6 py-4">
-                      <p className="font-medium text-gray-800">
-                        {scheme.schemeName}
-                      </p>
 
-                      <p className="text-xs text-gray-500 mt-1">
-                        {scheme.houseModel}
-                      </p>
-                    </td>
+                {configurations
+                  .slice(0, 5)
+                  .map((configuration) => {
 
-                    <td className="px-6 py-4 text-gray-600">
-                      {scheme.location}
-                    </td>
+                    const scheme = configuration.scheme;
 
-                    <td className="px-6 py-4 text-gray-600">
-                      {scheme.totalUnits}
-                    </td>
+                    const configurationStatus =
+                      getConfigurationStatus(
+                        configuration
+                      );
 
-                    <td className="px-6 py-4 text-gray-600">
-                      {scheme.availableUnits}
-                    </td>
-
-                    <td className="px-6 py-4 text-gray-600">
-                      {formatDate(scheme.applicationEndDate)}
-                    </td>
-
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusStyle(
-                          scheme.status,
-                        )}`}
+                    return (
+                      <tr
+                        key={`${scheme._id}-${configuration._id}`}
+                        className="border-t border-gray-100 hover:bg-gray-50"
                       >
-                        {scheme.status}
-                      </span>
-                    </td>
 
-                    <td className="px-6 py-4">
-                      <Link
-                        to={`/officer/scheme/${scheme._id}`}
-                        className="text-blue-600 font-medium hover:text-blue-800"
-                      >
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                        {/* Scheme */}
+
+                        <td className="px-6 py-4">
+
+                          <p className="font-medium text-gray-800">
+                            {scheme.schemeName ||
+                              "Housing Scheme"}
+                          </p>
+
+                          <p className="text-xs text-gray-500 mt-1">
+                            {scheme.houseModel ||
+                              "House model not specified"}
+                          </p>
+
+                        </td>
+
+                        {/* Location */}
+
+                        <td className="px-6 py-4 text-gray-600">
+
+                          <p>
+                            {configuration.location || "-"}
+                          </p>
+
+                          <p className="text-xs text-gray-400 mt-1">
+                            {configuration.district ||
+                              user?.district ||
+                              "-"}
+                          </p>
+
+                        </td>
+
+                        {/* Total Units */}
+
+                        <td className="px-6 py-4 text-gray-600">
+                          {Number(
+                            configuration.totalUnits
+                          ) || 0}
+                        </td>
+
+                        {/* Available Units */}
+
+                        <td className="px-6 py-4 text-gray-600">
+                          {Number(
+                            configuration.availableUnits
+                          ) || 0}
+                        </td>
+
+                        {/* Allotment Date */}
+
+                        <td className="px-6 py-4 text-gray-600">
+                          {formatDate(
+                            configuration.allotmentDate
+                          )}
+                        </td>
+
+                        {/* Status */}
+
+                        <td className="px-6 py-4">
+
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-medium ${configurationStatus.className}`}
+                          >
+                            {configurationStatus.label}
+                          </span>
+
+                        </td>
+
+                        {/* Action */}
+
+                        <td className="px-6 py-4">
+
+                          <Link
+                            to={`/officer/schemes/${scheme._id}`}
+                            className="text-blue-600 font-medium hover:text-blue-800"
+                          >
+                            View
+                          </Link>
+
+                        </td>
+
+                      </tr>
+                    );
+                  })}
+
               </tbody>
+
             </table>
+
           </div>
         )}
+
       </div>
 
       {/* ==========================================
@@ -385,25 +596,17 @@ function OfficerDashboard() {
       ========================================== */}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mt-6">
-        <Link
-          to="/officer/create-scheme"
-          className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
-        >
-          <h3 className="font-semibold text-gray-800">Create Housing Scheme</h3>
-
-          <p className="text-sm text-gray-500 mt-1">
-            Create and publish a new housing scheme.
-          </p>
-        </Link>
 
         <Link
           to="/officer/schemes"
           className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
         >
-          <h3 className="font-semibold text-gray-800">Manage Schemes</h3>
+          <h3 className="font-semibold text-gray-800">
+            Manage Housing Schemes
+          </h3>
 
           <p className="text-sm text-gray-500 mt-1">
-            View and manage your housing schemes.
+            View common schemes and manage your district configurations.
           </p>
         </Link>
 
@@ -411,14 +614,30 @@ function OfficerDashboard() {
           to="/officer/applications"
           className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
         >
-          <h3 className="font-semibold text-gray-800">Manage Applications</h3>
+          <h3 className="font-semibold text-gray-800">
+            Manage Applications
+          </h3>
 
           <p className="text-sm text-gray-500 mt-1">
-            Review applicant housing applications.
+            Review and verify applications from your district.
+          </p>
+        </Link>
+
+        <Link
+          to="/officer/schemes"
+          className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition"
+        >
+          <h3 className="font-semibold text-gray-800">
+            Housing Allotment
+          </h3>
+
+          <p className="text-sm text-gray-500 mt-1">
+            Manage district housing configurations and allotment schedules.
           </p>
         </Link>
 
       </div>
+
     </div>
   );
 }

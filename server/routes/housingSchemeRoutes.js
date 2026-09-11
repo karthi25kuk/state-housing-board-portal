@@ -9,21 +9,24 @@ const {
   getOfficerSchemes,
   getOfficerSchemeById,
   updateSchemeDetails,
-  openScheme,
   getOpenSchemes,
   getSchemeById,
 } = require("../controllers/housingSchemeController");
 
-const protect = require("../middleware/authMiddleware");
-const allowRoles = require("../middleware/roleMiddleware");
+const protect =
+  require("../middleware/authMiddleware");
 
-const router = express.Router();
+const allowRoles =
+  require("../middleware/roleMiddleware");
+
+const router =
+  express.Router();
+
 
 // ======================================================
 // ADMIN
 // ======================================================
 
-// Create housing scheme
 router.post(
   "/",
   protect,
@@ -31,7 +34,6 @@ router.post(
   createScheme
 );
 
-// Get all housing schemes
 router.get(
   "/admin",
   protect,
@@ -39,11 +41,11 @@ router.get(
   getAllSchemes
 );
 
+
 // ======================================================
 // APPLICANT
 // ======================================================
 
-// View currently open schemes
 router.get(
   "/open",
   protect,
@@ -51,11 +53,11 @@ router.get(
   getOpenSchemes
 );
 
+
 // ======================================================
 // OFFICER
 // ======================================================
 
-// View all schemes
 router.get(
   "/officer",
   protect,
@@ -63,7 +65,6 @@ router.get(
   getOfficerSchemes
 );
 
-// View one scheme
 router.get(
   "/officer/:schemeId",
   protect,
@@ -71,7 +72,6 @@ router.get(
   getOfficerSchemeById
 );
 
-// Configure operational details
 router.patch(
   "/officer/:schemeId",
   protect,
@@ -79,23 +79,21 @@ router.patch(
   updateSchemeDetails
 );
 
-// Open / publish scheme
-router.patch(
-  "/officer/:schemeId/open",
-  protect,
-  allowRoles("OFFICER"),
-  openScheme
-);
 
 // ======================================================
-// GENERAL SCHEME DETAILS
+// GENERAL
 // ======================================================
 
 router.get(
   "/:schemeId",
   protect,
-  allowRoles("OFFICER", "APPLICANT", "ADMIN"),
+  allowRoles(
+    "OFFICER",
+    "APPLICANT",
+    "ADMIN"
+  ),
   getSchemeById
 );
+
 
 module.exports = router;
