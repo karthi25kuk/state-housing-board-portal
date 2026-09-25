@@ -1,3 +1,4 @@
+
 const HousingScheme = require("../models/HousingScheme");
 
 // ======================================================
@@ -6,6 +7,10 @@ const HousingScheme = require("../models/HousingScheme");
 
 const normalizeDistrict = (district) => {
   return district?.trim().toLowerCase();
+};
+
+const normalizeLocation = (location) => {
+  return location?.trim().toLowerCase();
 };
 
 const toApplicantScheme = (scheme) => {
@@ -33,15 +38,17 @@ const toApplicantScheme = (scheme) => {
 // Officer can see ALL common schemes created by Admin.
 //
 // IMPORTANT:
+//
 // The Officer must NEVER receive another officer's
 // configuration as their own configuration.
 //
 // Therefore:
 //
 // - Common scheme information is returned.
-// - Only the logged-in officer's configuration is exposed.
-// - Other officers' configurations are hidden from the
-//   Officer response.
+// - Only the logged-in officer's configurations are
+//   exposed.
+// - Multiple configurations for the same district are
+//   supported when they belong to the same officer.
 //
 // ======================================================
 
@@ -71,51 +78,65 @@ const getOfficerSchemes = async (req, res) => {
     // GET ALL COMMON SCHEMES
     // ==================================================
 
-    const schemes = await HousingScheme.find({})
-      .populate("createdBy", "name email")
-      .sort({
-        createdAt: -1,
+    const schemes =
+      await HousingScheme.find({})
+        .populate(
+          "createdBy",
+          "name email"
+        )
+        .sort({
+          createdAt: -1,
+        });
+
+    // ==================================================
+    // RETURN ALL CONFIGURATIONS BELONGING TO THIS
+    // OFFICER + DISTRICT
+    // ==================================================
+
+    const officerSchemes =
+      schemes.map((scheme) => {
+        const officerConfigurations =
+          scheme.configurations.filter(
+            (configuration) =>
+              configuration.officer &&
+              configuration.officer.toString() ===
+                officerId.toString() &&
+              normalizeDistrict(
+                configuration.district
+              ) ===
+                normalizedOfficerDistrict
+          );
+
+        const schemeObject =
+          scheme.toObject();
+
+        // IMPORTANT:
+        //
+        // Hide other officers' configurations.
+
+        schemeObject.configurations =
+          officerConfigurations;
+
+        return {
+          ...schemeObject,
+
+          // Backward-compatible first configuration.
+          officerConfiguration:
+            officerConfigurations[0] ||
+            null,
+
+          // Complete list for multiple locations.
+          officerConfigurations,
+
+          isConfigured:
+            officerConfigurations.length >
+            0,
+        };
       });
 
-    // ==================================================
-    // RETURN ONLY THIS OFFICER'S CONFIGURATION
-    // ==================================================
-
-    const officerSchemes = schemes.map((scheme) => {
-      const officerConfigurations =
-        scheme.configurations.filter(
-          (configuration) =>
-            configuration.officer &&
-            configuration.officer.toString() ===
-              officerId.toString() &&
-            normalizeDistrict(
-              configuration.district
-            ) === normalizedOfficerDistrict
-        );
-
-      const schemeObject = scheme.toObject();
-
-      // IMPORTANT:
-      // Do not expose other officers' configurations
-      // to this officer.
-      schemeObject.configurations =
-        officerConfigurations;
-
-      return {
-        ...schemeObject,
-
-        officerConfiguration:
-          officerConfigurations[0] || null,
-
-        officerConfigurations,
-
-        isConfigured:
-          officerConfigurations.length > 0,
-      };
-    });
-
     return res.status(200).json({
-      schemes: officerSchemes,
+      schemes:
+        officerSchemes,
     });
   } catch (error) {
     console.error(
@@ -142,13 +163,17 @@ const getOfficerSchemes = async (req, res) => {
 //
 // If configured:
 //
-// officerConfiguration = ONLY that officer's
-// configuration.
+// officerConfigurations = ALL configurations belonging
+// to the logged-in Officer in their district.
 //
 // Other district/officer configurations are hidden.
+//
 // ======================================================
 
-const getOfficerSchemeById = async (req, res) => {
+const getOfficerSchemeById = async (
+  req,
+  res
+) => {
   try {
     const officerId = req.user.userId;
     const officerDistrict = req.user.district;
@@ -169,7 +194,9 @@ const getOfficerSchemeById = async (req, res) => {
     }
 
     const normalizedOfficerDistrict =
-      normalizeDistrict(officerDistrict);
+      normalizeDistrict(
+        officerDistrict
+      );
 
     // ==================================================
     // FIND COMMON SCHEME
@@ -191,7 +218,8 @@ const getOfficerSchemeById = async (req, res) => {
     }
 
     // ==================================================
-    // FIND ONLY LOGGED-IN OFFICER CONFIGURATION
+    // FIND ALL CONFIGURATIONS BELONGING TO THE
+    // LOGGED-IN OFFICER + DISTRICT
     // ==================================================
 
     const officerConfigurations =
@@ -202,14 +230,16 @@ const getOfficerSchemeById = async (req, res) => {
             officerId.toString() &&
           normalizeDistrict(
             configuration.district
-          ) === normalizedOfficerDistrict
+          ) ===
+            normalizedOfficerDistrict
       );
 
     // ==================================================
     // HIDE OTHER CONFIGURATIONS
     // ==================================================
 
-    const schemeObject = scheme.toObject();
+    const schemeObject =
+      scheme.toObject();
 
     schemeObject.configurations =
       officerConfigurations;
@@ -219,15 +249,20 @@ const getOfficerSchemeById = async (req, res) => {
     // ==================================================
 
     return res.status(200).json({
-      scheme: schemeObject,
+      scheme:
+        schemeObject,
 
+      // Backward-compatible first configuration.
       officerConfiguration:
-        officerConfigurations[0] || null,
+        officerConfigurations[0] ||
+        null,
 
+      // Complete configurations for this officer.
       officerConfigurations,
 
       isConfigured:
-        officerConfigurations.length > 0,
+        officerConfigurations.length >
+        0,
     });
   } catch (error) {
     console.error(
@@ -262,12 +297,26 @@ const getOfficerSchemeById = async (req, res) => {
 // configurationId:
 //     Update existing configuration.
 //
+// Multiple locations are allowed for:
+//
+//     SAME SCHEME
+//     SAME DISTRICT
+//     SAME OFFICER
+//
+// But the same location cannot be duplicated.
+//
 // ======================================================
 
-const updateSchemeDetails = async (req, res) => {
+const updateSchemeDetails = async (
+  req,
+  res
+) => {
   try {
-    const officerId = req.user.userId;
-    const officerDistrict = req.user.district;
+    const officerId =
+      req.user.userId;
+
+    const officerDistrict =
+      req.user.district;
 
     const {
       configurationId,
@@ -276,7 +325,8 @@ const updateSchemeDetails = async (req, res) => {
       allotmentDate,
     } = req.body;
 
-    const { schemeId } = req.params;
+    const { schemeId } =
+      req.params;
 
     // ==================================================
     // VALIDATE OFFICER DISTRICT
@@ -293,7 +343,9 @@ const updateSchemeDetails = async (req, res) => {
     }
 
     const normalizedOfficerDistrict =
-      normalizeDistrict(officerDistrict);
+      normalizeDistrict(
+        officerDistrict
+      );
 
     // ==================================================
     // VALIDATE LOCATION
@@ -310,6 +362,9 @@ const updateSchemeDetails = async (req, res) => {
       });
     }
 
+    const normalizedLocation =
+      normalizeLocation(location);
+
     // ==================================================
     // VALIDATE TOTAL UNITS
     // ==================================================
@@ -318,8 +373,12 @@ const updateSchemeDetails = async (req, res) => {
       Number(totalUnits);
 
     if (
-      !Number.isFinite(parsedTotalUnits) ||
-      !Number.isInteger(parsedTotalUnits) ||
+      !Number.isFinite(
+        parsedTotalUnits
+      ) ||
+      !Number.isInteger(
+        parsedTotalUnits
+      ) ||
       parsedTotalUnits < 1
     ) {
       return res.status(400).json({
@@ -373,14 +432,24 @@ const updateSchemeDetails = async (req, res) => {
     // CREATE NEW CONFIGURATION
     // ==================================================
     //
-    // Admin creates standard scheme.
+    // Admin creates the common scheme.
     //
-    // Officer later creates configuration for
-    // their own district.
+    // Officer later creates one or more configurations
+    // for their district.
     //
     // ==================================================
 
     if (!configurationId) {
+      // ----------------------------------------------
+      // CHECK DUPLICATE LOCATION
+      // ----------------------------------------------
+      //
+      // Same scheme + district + officer + location
+      // cannot be duplicated.
+      //
+      // Different locations are allowed.
+      //
+
       const duplicateConfiguration =
         scheme.configurations.find(
           (configuration) =>
@@ -389,13 +458,17 @@ const updateSchemeDetails = async (req, res) => {
               officerId.toString() &&
             normalizeDistrict(
               configuration.district
-            ) === normalizedOfficerDistrict &&
-            normalizeDistrict(
+            ) ===
+              normalizedOfficerDistrict &&
+            normalizeLocation(
               configuration.location
-            ) === normalizeDistrict(location)
+            ) ===
+              normalizedLocation
         );
 
-      if (duplicateConfiguration) {
+      if (
+        duplicateConfiguration
+      ) {
         return res.status(409).json({
           message:
             "This housing scheme already has a configuration for that location.",
@@ -403,19 +476,23 @@ const updateSchemeDetails = async (req, res) => {
       }
 
       // ----------------------------------------------
-      // Check whether another officer already owns
-      // this district configuration.
-      //
-      // One district must have one responsible
-      // officer for a particular scheme.
+      // CHECK DISTRICT OWNERSHIP
       // ----------------------------------------------
+      //
+      // One district within one scheme must have only
+      // one responsible officer.
+      //
+      // Multiple locations for that district are allowed
+      // when they belong to the same officer.
+      //
 
       const existingDistrictConfiguration =
         scheme.configurations.find(
           (configuration) =>
             normalizeDistrict(
               configuration.district
-            ) === normalizedOfficerDistrict
+            ) ===
+            normalizedOfficerDistrict
         );
 
       if (
@@ -430,15 +507,18 @@ const updateSchemeDetails = async (req, res) => {
       }
 
       // ----------------------------------------------
-      // Create configuration
+      // CREATE CONFIGURATION
       // ----------------------------------------------
 
       scheme.configurations.push({
-        district: officerDistrict.trim(),
+        district:
+          officerDistrict.trim(),
 
-        officer: officerId,
+        officer:
+          officerId,
 
-        location: location.trim(),
+        location:
+          location.trim(),
 
         totalUnits:
           parsedTotalUnits,
@@ -506,7 +586,8 @@ const updateSchemeDetails = async (req, res) => {
     if (
       normalizeDistrict(
         configuration.district
-      ) !== normalizedOfficerDistrict
+      ) !==
+      normalizedOfficerDistrict
     ) {
       return res.status(403).json({
         message:
@@ -515,12 +596,61 @@ const updateSchemeDetails = async (req, res) => {
     }
 
     // ==================================================
-    // CALCULATE ALREADY ALLOCATED/OCCUPIED UNITS
+    // CHECK DUPLICATE LOCATION DURING UPDATE
+    // ==================================================
+    //
+    // Exclude the configuration currently being edited.
+    //
+    // This prevents:
+    //
+    // Location A
+    // Location B
+    //
+    // from becoming:
+    //
+    // Location A
+    // Location A
+    //
+    // ==================================================
+
+    const duplicateConfiguration =
+      scheme.configurations.find(
+        (existingConfiguration) =>
+          existingConfiguration._id.toString() !==
+            configuration._id.toString() &&
+          existingConfiguration.officer &&
+          existingConfiguration.officer.toString() ===
+            officerId.toString() &&
+          normalizeDistrict(
+            existingConfiguration.district
+          ) ===
+            normalizedOfficerDistrict &&
+          normalizeLocation(
+            existingConfiguration.location
+          ) ===
+            normalizedLocation
+      );
+
+    if (
+      duplicateConfiguration
+    ) {
+      return res.status(409).json({
+        message:
+          "Another configuration already exists for that housing location.",
+      });
+    }
+
+    // ==================================================
+    // CALCULATE ALREADY ALLOCATED / OCCUPIED UNITS
     // ==================================================
 
     const alreadyAllocated =
-      Number(configuration.totalUnits || 0) -
-      Number(configuration.availableUnits || 0);
+      Number(
+        configuration.totalUnits || 0
+      ) -
+      Number(
+        configuration.availableUnits || 0
+      );
 
     // ==================================================
     // PREVENT INVALID REDUCTION
@@ -574,14 +704,19 @@ const updateSchemeDetails = async (req, res) => {
     // MONGOOSE DUPLICATE / VALIDATION ERROR
     // ==================================================
 
-    if (error.code === 11000) {
+    if (
+      error.code === 11000
+    ) {
       return res.status(409).json({
         message:
           "This housing configuration already exists.",
       });
     }
 
-    if (error.name === "ValidationError") {
+    if (
+      error.name ===
+      "ValidationError"
+    ) {
       return res.status(400).json({
         message:
           error.message ||
@@ -600,32 +735,21 @@ const updateSchemeDetails = async (req, res) => {
 // GET ALL STANDARD SCHEMES FOR APPLICANT
 // ======================================================
 //
-// IMPORTANT WORKFLOW CHANGE:
+// IMPORTANT:
 //
 // A scheme is STANDARD and exists independently of
 // district configuration.
 //
-// Therefore:
+// Applicant can see and apply for ALL schemes.
 //
-// Applicant district = Erode
-//
-// Scheme A:
-//   Erode configuration exists
-//
-// Scheme B:
-//   Erode configuration DOES NOT exist
-//
-// Applicant must still be able to SEE and APPLY for
-// BOTH Scheme A and Scheme B.
-//
-// Application does NOT depend on configuration.
-//
-// Configuration is required only later for:
-//     ranking → allotment
+// Configuration is required only later for allotment.
 //
 // ======================================================
 
-const getOpenSchemes = async (req, res) => {
+const getOpenSchemes = async (
+  req,
+  res
+) => {
   try {
     // ==================================================
     // GET ALL STANDARD SCHEMES
@@ -633,12 +757,6 @@ const getOpenSchemes = async (req, res) => {
     //
     // DO NOT FILTER BY CONFIGURATION.
     //
-    // This is intentional.
-    //
-    // Applicants can apply before the Officer creates
-    // the district configuration.
-    //
-    // ==================================================
 
     const schemes =
       await HousingScheme.find({})
@@ -651,22 +769,17 @@ const getOpenSchemes = async (req, res) => {
         });
 
     // ==================================================
-    // ATTACH DISTRICT CONFIGURATION IF AVAILABLE
-    // ==================================================
-    //
-    // This is informational only.
-    //
-    // It MUST NOT determine whether the scheme can
-    // be applied for.
-    //
+    // RETURN STANDARD SCHEME INFORMATION
     // ==================================================
 
-    const applicantSchemes = schemes.map(
-      toApplicantScheme
-    );
+    const applicantSchemes =
+      schemes.map(
+        toApplicantScheme
+      );
 
     return res.status(200).json({
-      schemes: applicantSchemes,
+      schemes:
+        applicantSchemes,
     });
   } catch (error) {
     console.error(
@@ -703,14 +816,15 @@ const getOpenSchemes = async (req, res) => {
 // Applicant does NOT need a district configuration
 // to open the scheme.
 //
-// The absence of configuration only means that
-// allotment cannot happen yet.
-//
 // ======================================================
 
-const getSchemeById = async (req, res) => {
+const getSchemeById = async (
+  req,
+  res
+) => {
   try {
-    const { schemeId } = req.params;
+    const { schemeId } =
+      req.params;
 
     const scheme =
       await HousingScheme.findById(
@@ -732,10 +846,14 @@ const getSchemeById = async (req, res) => {
     // ==================================================
 
     if (
-      req.user.role === "APPLICANT"
+      req.user.role ===
+      "APPLICANT"
     ) {
       return res.status(200).json({
-        scheme: toApplicantScheme(scheme),
+        scheme:
+          toApplicantScheme(
+            scheme
+          ),
       });
     }
 
@@ -744,7 +862,8 @@ const getSchemeById = async (req, res) => {
     // ==================================================
 
     if (
-      req.user.role === "OFFICER"
+      req.user.role ===
+      "OFFICER"
     ) {
       const officerId =
         req.user.userId;
@@ -762,8 +881,18 @@ const getSchemeById = async (req, res) => {
         });
       }
 
-      const officerConfiguration =
-        scheme.configurations.find(
+      const normalizedOfficerDistrict =
+        normalizeDistrict(
+          officerDistrict
+        );
+
+      // ----------------------------------------------
+      // FIND ALL CONFIGURATIONS BELONGING TO THIS
+      // OFFICER + DISTRICT
+      // ----------------------------------------------
+
+      const officerConfigurations =
+        scheme.configurations.filter(
           (configuration) =>
             configuration.officer &&
             configuration.officer.toString() ===
@@ -771,28 +900,34 @@ const getSchemeById = async (req, res) => {
             normalizeDistrict(
               configuration.district
             ) ===
-              normalizeDistrict(
-                officerDistrict
-              )
+              normalizedOfficerDistrict
         );
 
-      // Hide other officer configurations.
+      // ----------------------------------------------
+      // HIDE OTHER CONFIGURATIONS
+      // ----------------------------------------------
+
       const schemeObject =
         scheme.toObject();
 
       schemeObject.configurations =
-        officerConfiguration
-          ? [officerConfiguration]
-          : [];
+        officerConfigurations;
 
       return res.status(200).json({
-        scheme: schemeObject,
+        scheme:
+          schemeObject,
 
+        // Backward-compatible first configuration.
         officerConfiguration:
-          officerConfiguration || null,
+          officerConfigurations[0] ||
+          null,
+
+        // All configurations for this officer.
+        officerConfigurations,
 
         isConfigured:
-          !!officerConfiguration,
+          officerConfigurations.length >
+          0,
       });
     }
 
@@ -827,3 +962,4 @@ module.exports = {
   getOpenSchemes,
   getSchemeById,
 };
+

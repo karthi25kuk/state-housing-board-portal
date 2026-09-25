@@ -1,3 +1,4 @@
+
 const mongoose = require("mongoose");
 
 // ======================================================
@@ -48,7 +49,8 @@ const waitingListSchema = new mongoose.Schema(
     // APPLICATION
     // ==================================================
     //
-    // One application can have only one ranking entry.
+    // One application can have only one waiting-list
+    // ranking entry.
     //
 
     applicationId: {
@@ -63,7 +65,7 @@ const waitingListSchema = new mongoose.Schema(
     // HOUSING SCHEME
     // ==================================================
     //
-    // Ranking belongs to a particular scheme.
+    // Ranking belongs to a particular housing scheme.
     //
 
     schemeId: {
@@ -76,8 +78,6 @@ const waitingListSchema = new mongoose.Schema(
     // ==================================================
     // DISTRICT
     // ==================================================
-    //
-    // This is the most important field for ranking.
     //
     // Ranking key:
     //
@@ -103,7 +103,7 @@ const waitingListSchema = new mongoose.Schema(
     // RANKING POSITION
     // ==================================================
     //
-    // Only districtPosition is required.
+    // District-wise ranking position.
     //
     // There is NO overall/state-level position.
     //
@@ -111,15 +111,13 @@ const waitingListSchema = new mongoose.Schema(
     //
     // Anna Scheme + Madurai
     //
-    // districtPosition:
-    //
     // Kumar = 1
     // Ravi  = 2
     // Priya = 3
     // Arun  = 4
     //
-    // The ranking service is responsible for recalculating
-    // positions whenever required.
+    // Ranking is recalculated by the waiting-list
+    // controller whenever eligible applicants change.
     //
 
     districtPosition: {
@@ -130,7 +128,7 @@ const waitingListSchema = new mongoose.Schema(
     },
 
     // ==================================================
-    // RANKING STATUS
+    // WAITING LIST STATUS
     // ==================================================
     //
     // ACTIVE
@@ -140,31 +138,31 @@ const waitingListSchema = new mongoose.Schema(
     //
     // REMOVED
     // ----------------------------------------------
-    // Applicant is no longer eligible to participate
-    // in this ranking.
-    //
-    // An applicant can become REMOVED when:
-    //
-    // 1. Applicant accepts an allotment.
-    // 2. Applicant rejects an allotment.
-    // 3. Applicant already received a house from another
-    //    scheme.
-    // 4. Application is rejected/withdrawn.
+    // Applicant is no longer participating in the
+    // ranking.
     //
     // IMPORTANT:
     //
-    // We do NOT use:
+    // Waiting-list status is intentionally independent
+    // from allotment status.
     //
-    // SELECTED
-    // ALLOTMENT_OFFERED
-    // ALLOTTED
+    // An allotment offer uses:
     //
-    // Those belong to the Allotment workflow.
+    //     Allotment.status = OFFERED
+    //
+    // The WaitingList entry does NOT become OFFERED.
+    //
+    // Allotment statuses are handled by Allotment.js:
+    //
+    // OFFERED
+    // ACCEPTED
+    // REJECTED
+    // CANCELLED
     //
 
     status: {
       type: String,
-      enum: ["ACTIVE", "OFFERED", "REMOVED"],
+      enum: ["ACTIVE", "REMOVED"],
       default: "ACTIVE",
       index: true,
     },
@@ -233,7 +231,7 @@ waitingListSchema.index(
 //
 // Main query:
 //
-// Find the active ranking for:
+// Find active rankings for:
 //
 //      Anna Scheme
 //      +
@@ -253,8 +251,7 @@ waitingListSchema.index({
 // APPLICANT ACTIVE RANKING INDEX
 // ======================================================
 //
-// Useful when an applicant receives a house from another
-// scheme.
+// Useful when an applicant accepts an allotment.
 //
 // Example:
 //
@@ -273,4 +270,8 @@ waitingListSchema.index({
 // MODEL
 // ======================================================
 
-module.exports = mongoose.model("WaitingList", waitingListSchema);
+module.exports = mongoose.model(
+  "WaitingList",
+  waitingListSchema,
+);
+

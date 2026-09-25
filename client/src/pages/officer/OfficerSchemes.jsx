@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -23,20 +24,32 @@ function OfficerSchemes() {
   const officerDistrict = user?.district?.trim();
 
   // ==================================================
-  // GET OFFICER DISTRICT CONFIGURATION
+  // GET OFFICER CONFIGURATIONS
   // ==================================================
 
-  const getDistrictConfiguration = (scheme) => {
-    if (!scheme?.configurations?.length || !officerDistrict) {
-      return null;
+  const getOfficerConfigurations = (scheme) => {
+    // Preferred response from corrected backend
+    if (Array.isArray(scheme?.officerConfigurations)) {
+      return scheme.officerConfigurations;
     }
 
-    return (
-      scheme.configurations.find(
-        (configuration) =>
-          configuration?.district?.trim().toLowerCase() ===
-          officerDistrict.toLowerCase()
-      ) || null
+    // Backward compatibility
+    if (scheme?.officerConfiguration) {
+      return [scheme.officerConfiguration];
+    }
+
+    // Final fallback
+    if (
+      !Array.isArray(scheme?.configurations) ||
+      !officerDistrict
+    ) {
+      return [];
+    }
+
+    return scheme.configurations.filter(
+      (configuration) =>
+        configuration?.district?.trim().toLowerCase() ===
+        officerDistrict.toLowerCase()
     );
   };
 
@@ -173,7 +186,10 @@ function OfficerSchemes() {
       configuration.availableUnits || 0
     );
 
-    if (totalUnits < 1 || !configuration.location) {
+    if (
+      totalUnits < 1 ||
+      !configuration.location
+    ) {
       return {
         label: "Incomplete",
         className: "bg-yellow-100 text-yellow-700",
@@ -215,6 +231,56 @@ function OfficerSchemes() {
   };
 
   // ==================================================
+  // OVERALL SCHEME STATUS
+  // ==================================================
+
+  const getOverallStatus = (configurations) => {
+    if (!configurations.length) {
+      return {
+        label: "Not Configured",
+        className: "bg-yellow-100 text-yellow-700",
+      };
+    }
+
+    const hasActiveConfiguration =
+      configurations.some((configuration) => {
+        const status =
+          getConfigurationStatus(configuration);
+
+        return (
+          status.label === "Active" ||
+          status.label === "Upcoming"
+        );
+      });
+
+    if (hasActiveConfiguration) {
+      return {
+        label: "Configured",
+        className: "bg-green-100 text-green-700",
+      };
+    }
+
+    const allFullyAllocated =
+      configurations.every(
+        (configuration) =>
+          getConfigurationStatus(configuration)
+            .label === "Fully Allocated"
+      );
+
+    if (allFullyAllocated) {
+      return {
+        label: "Fully Allocated",
+        className: "bg-red-100 text-red-700",
+      };
+    }
+
+    return {
+      label: "Configured",
+      className: "bg-blue-100 text-blue-700",
+    };
+  };
+
+  // ==================================================
   // LOADING
   // ==================================================
 
@@ -241,6 +307,7 @@ function OfficerSchemes() {
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-7xl mx-auto">
+
         {/* ==================================================
             HEADER
         ================================================== */}
@@ -289,7 +356,9 @@ function OfficerSchemes() {
               }
             />
 
-            {refreshing ? "Refreshing..." : "Refresh"}
+            {refreshing
+              ? "Refreshing..."
+              : "Refresh"}
           </button>
         </div>
 
@@ -340,25 +409,38 @@ function OfficerSchemes() {
         {schemes.length > 0 && (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {schemes.map((scheme) => {
-              const configuration =
-                getDistrictConfiguration(scheme);
+              const configurations =
+                getOfficerConfigurations(scheme);
 
-              const totalUnits = Number(
-                configuration?.totalUnits || 0
-              );
+              const overallStatus =
+                getOverallStatus(configurations);
 
-              const availableUnits = Number(
-                configuration?.availableUnits || 0
-              );
+              const totalConfiguredUnits =
+                configurations.reduce(
+                  (sum, configuration) =>
+                    sum +
+                    Number(
+                      configuration?.totalUnits || 0
+                    ),
+                  0
+                );
 
-              const status =
-                getConfigurationStatus(configuration);
+              const totalAvailableUnits =
+                configurations.reduce(
+                  (sum, configuration) =>
+                    sum +
+                    Number(
+                      configuration?.availableUnits || 0
+                    ),
+                  0
+                );
 
               return (
                 <div
                   key={scheme._id}
                   className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
                 >
+
                   {/* ==================================================
                       SCHEME HEADER
                   ================================================== */}
@@ -384,9 +466,9 @@ function OfficerSchemes() {
                       </div>
 
                       <span
-                        className={`text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap ${status.className}`}
+                        className={`text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap ${overallStatus.className}`}
                       >
-                        {status.label}
+                        {overallStatus.label}
                       </span>
                     </div>
 
@@ -406,6 +488,7 @@ function OfficerSchemes() {
                     </h3>
 
                     <div className="grid grid-cols-2 gap-5 mt-4">
+
                       {/* House Model */}
 
                       <div>
@@ -426,7 +509,9 @@ function OfficerSchemes() {
                         </p>
 
                         <p className="font-medium text-gray-800 mt-1">
-                          {formatPrice(scheme.price)}
+                          {formatPrice(
+                            scheme.price
+                          )}
                         </p>
                       </div>
 
@@ -438,7 +523,8 @@ function OfficerSchemes() {
                         </p>
 
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {scheme.eligibleIncomeCategories
+                          {scheme
+                            .eligibleIncomeCategories
                             ?.length ? (
                             scheme.eligibleIncomeCategories.map(
                               (category) => (
@@ -480,7 +566,8 @@ function OfficerSchemes() {
 
                   <div className="px-6 pb-6">
                     <div className="border-t border-gray-100 pt-5">
-                      <div className="flex items-center justify-between gap-3">
+
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                         <div>
                           <h3 className="text-sm font-semibold text-gray-800 uppercase tracking-wide">
                             {officerDistrict
@@ -490,26 +577,39 @@ function OfficerSchemes() {
                           </h3>
 
                           <p className="text-xs text-gray-500 mt-1">
-                            Housing configuration managed
+                            Housing configurations managed
                             by the district officer.
                           </p>
                         </div>
 
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${status.className}`}
-                        >
-                          {status.label ===
-                          "Active" ? (
-                            <FaCheckCircle />
-                          ) : (
-                            <FaClock />
-                          )}
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${overallStatus.className}`}
+                          >
+                            {overallStatus.label ===
+                            "Configured" ? (
+                              <FaCheckCircle />
+                            ) : (
+                              <FaClock />
+                            )}
 
-                          {status.label}
-                        </span>
+                            {overallStatus.label}
+                          </span>
+
+                          <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">
+                            {configurations.length}{" "}
+                            {configurations.length ===
+                            1
+                              ? "Location"
+                              : "Locations"}
+                          </span>
+                        </div>
                       </div>
 
-                      {!configuration && (
+                      {/* No configurations */}
+
+                      {configurations.length ===
+                        0 && (
                         <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                           <p className="text-sm font-medium text-yellow-800">
                             District configuration not
@@ -517,77 +617,167 @@ function OfficerSchemes() {
                           </p>
 
                           <p className="text-xs text-yellow-700 mt-1">
-                            Configure the housing location,
-                            total units and allotment date
-                            for your district.
+                            Configure the first housing
+                            location, total units and
+                            allotment date for your
+                            district.
                           </p>
                         </div>
                       )}
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5">
-                        {/* Location */}
+                      {/* Configuration summary */}
 
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <FaMapMarkerAlt className="text-blue-600 mb-2" />
+                      {configurations.length >
+                        0 && (
+                        <div className="mt-5 space-y-4">
+                          {configurations.map(
+                            (
+                              configuration,
+                              index
+                            ) => {
+                              const totalUnits =
+                                Number(
+                                  configuration?.totalUnits ||
+                                    0
+                                );
 
-                          <p className="text-xs text-gray-500">
-                            Location
-                          </p>
+                              const availableUnits =
+                                Number(
+                                  configuration?.availableUnits ||
+                                    0
+                                );
 
-                          <p className="text-sm font-medium text-gray-800 mt-1 wrap-break-word">
-                            {configuration?.location ||
-                              "Not configured"}
-                          </p>
+                              const status =
+                                getConfigurationStatus(
+                                  configuration
+                                );
+
+                              return (
+                                <div
+                                  key={
+                                    configuration?._id ||
+                                    `${configuration?.location}-${index}`
+                                  }
+                                  className="border border-gray-200 rounded-xl bg-gray-50 p-4"
+                                >
+                                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                                    <div>
+                                      <p className="text-xs text-gray-500 uppercase tracking-wide">
+                                        Location{" "}
+                                        {index + 1}
+                                      </p>
+
+                                      <h4 className="text-base font-semibold text-gray-800 mt-1">
+                                        {configuration?.location ||
+                                          "Location not configured"}
+                                      </h4>
+                                    </div>
+
+                                    <span
+                                      className={`text-xs font-semibold px-3 py-1 rounded-full whitespace-nowrap ${status.className}`}
+                                    >
+                                      {status.label}
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+
+                                    {/* Location */}
+
+                                    <div>
+                                      <FaMapMarkerAlt className="text-blue-600 mb-1" />
+
+                                      <p className="text-xs text-gray-500">
+                                        Location
+                                      </p>
+
+                                      <p className="text-sm font-medium text-gray-800 mt-1">
+                                        {configuration?.location ||
+                                          "-"}
+                                      </p>
+                                    </div>
+
+                                    {/* Total Units */}
+
+                                    <div>
+                                      <FaHome className="text-blue-600 mb-1" />
+
+                                      <p className="text-xs text-gray-500">
+                                        Total Houses
+                                      </p>
+
+                                      <p className="text-sm font-medium text-gray-800 mt-1">
+                                        {totalUnits}
+                                      </p>
+                                    </div>
+
+                                    {/* Available Units */}
+
+                                    <div>
+                                      <FaCheckCircle className="text-green-600 mb-1" />
+
+                                      <p className="text-xs text-gray-500">
+                                        Available
+                                      </p>
+
+                                      <p className="text-sm font-medium text-green-700 mt-1">
+                                        {availableUnits}
+                                      </p>
+                                    </div>
+
+                                    {/* Allotment Date */}
+
+                                    <div>
+                                      <FaCalendarAlt className="text-purple-600 mb-1" />
+
+                                      <p className="text-xs text-gray-500">
+                                        Allotment Date
+                                      </p>
+
+                                      <p className="text-xs font-medium text-gray-800 mt-1">
+                                        {formatDate(
+                                          configuration?.allotmentDate
+                                        )}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                          )}
                         </div>
+                      )}
 
-                        {/* Total Units */}
+                      {/* Configuration totals */}
 
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <FaHome className="text-blue-600 mb-2" />
+                      {configurations.length >
+                        0 && (
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                          <div className="bg-blue-50 rounded-lg p-4">
+                            <p className="text-xs text-blue-600">
+                              Total Configured Units
+                            </p>
 
-                          <p className="text-xs text-gray-500">
-                            Total Houses
-                          </p>
+                            <p className="text-xl font-bold text-blue-800 mt-1">
+                              {
+                                totalConfiguredUnits
+                              }
+                            </p>
+                          </div>
 
-                          <p className="text-sm font-medium text-gray-800 mt-1">
-                            {configuration
-                              ? totalUnits
-                              : "-"}
-                          </p>
+                          <div className="bg-green-50 rounded-lg p-4">
+                            <p className="text-xs text-green-600">
+                              Total Available Units
+                            </p>
+
+                            <p className="text-xl font-bold text-green-800 mt-1">
+                              {
+                                totalAvailableUnits
+                              }
+                            </p>
+                          </div>
                         </div>
-
-                        {/* Available Units */}
-
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <FaCheckCircle className="text-green-600 mb-2" />
-
-                          <p className="text-xs text-gray-500">
-                            Available
-                          </p>
-
-                          <p className="text-sm font-medium text-green-700 mt-1">
-                            {configuration
-                              ? availableUnits
-                              : "-"}
-                          </p>
-                        </div>
-
-                        {/* Allotment Date */}
-
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <FaCalendarAlt className="text-purple-600 mb-2" />
-
-                          <p className="text-xs text-gray-500">
-                            Allotment Date
-                          </p>
-
-                          <p className="text-xs font-medium text-gray-800 mt-1">
-                            {formatDate(
-                              configuration?.allotmentDate
-                            )}
-                          </p>
-                        </div>
-                      </div>
+                      )}
                     </div>
                   </div>
 
@@ -597,6 +787,7 @@ function OfficerSchemes() {
 
                   <div className="px-6 py-4 bg-gray-50 border-t border-gray-100">
                     <div className="flex flex-wrap gap-3">
+
                       <Link
                         to={`/officer/schemes/${scheme._id}`}
                         className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-white text-sm font-medium transition"
@@ -608,8 +799,8 @@ function OfficerSchemes() {
                         to={`/officer/schemes/${scheme._id}`}
                         className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition"
                       >
-                        {configuration
-                          ? "Edit Configuration"
+                        {configurations.length > 0
+                          ? "Manage Configurations"
                           : "Configure District"}
                       </Link>
 
@@ -632,3 +823,4 @@ function OfficerSchemes() {
 }
 
 export default OfficerSchemes;
+

@@ -1,8 +1,11 @@
+
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 
 function OfficerApplicationDetails() {
   const { applicationId } = useParams();
+  const { token } = useAuth();
 
   const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -23,8 +26,6 @@ function OfficerApplicationDetails() {
       try {
         setLoading(true);
         setError("");
-
-        const token = localStorage.getItem("token");
 
         if (!token) {
           setError(
@@ -84,7 +85,7 @@ function OfficerApplicationDetails() {
     };
 
     fetchApplication();
-  }, [applicationId]);
+  }, [applicationId, token]);
 
   // ==========================================
   // STATUS STYLE
@@ -148,6 +149,52 @@ function OfficerApplicationDetails() {
   };
 
   // ==========================================
+  // CURRENCY FORMATTER
+  // ==========================================
+
+  const formatPrice = (price) => {
+    if (
+      price === undefined ||
+      price === null ||
+      price === ""
+    ) {
+      return "-";
+    }
+
+    const numericPrice = Number(price);
+
+    if (Number.isNaN(numericPrice)) {
+      return "-";
+    }
+
+    return `₹${numericPrice.toLocaleString("en-IN")}`;
+  };
+
+  // ==========================================
+  // GET DISTRICT CONFIGURATIONS
+  // ==========================================
+
+  const getDistrictConfigurations = (scheme) => {
+    if (!Array.isArray(scheme?.configurations)) {
+      return [];
+    }
+
+    const applicationDistrict =
+      application?.district?.trim().toLowerCase();
+
+    if (!applicationDistrict) {
+      return [];
+    }
+
+    return scheme.configurations.filter(
+      (configuration) =>
+        configuration?.district
+          ?.trim()
+          .toLowerCase() === applicationDistrict
+    );
+  };
+
+  // ==========================================
   // VERIFY APPLICATION
   // ==========================================
 
@@ -170,9 +217,8 @@ function OfficerApplicationDetails() {
         ? "Are you sure you want to approve this application?"
         : "Are you sure you want to reject this application?";
 
-    const confirmed = window.confirm(
-      confirmationMessage
-    );
+    const confirmed =
+      window.confirm(confirmationMessage);
 
     if (!confirmed) {
       return;
@@ -180,8 +226,6 @@ function OfficerApplicationDetails() {
 
     try {
       setSubmitting(true);
-
-      const token = localStorage.getItem("token");
 
       if (!token) {
         setActionError(
@@ -200,7 +244,8 @@ function OfficerApplicationDetails() {
           },
           body: JSON.stringify({
             status,
-            verificationRemarks: remarks.trim(),
+            verificationRemarks:
+              remarks.trim(),
           }),
         }
       );
@@ -214,10 +259,17 @@ function OfficerApplicationDetails() {
         );
       }
 
+      if (!data.application) {
+        throw new Error(
+          "Updated application data was not returned by the server."
+        );
+      }
+
       setApplication(data.application);
 
       setRemarks(
-        data.application?.verificationRemarks || ""
+        data.application.verificationRemarks ||
+          ""
       );
 
       setActionMessage(
@@ -301,14 +353,8 @@ function OfficerApplicationDetails() {
 
   const scheme = application.schemeId || {};
 
-  const districtConfiguration =
-    Array.isArray(scheme.configurations)
-      ? scheme.configurations.find(
-          (configuration) =>
-            configuration.district?.trim().toLowerCase() ===
-            application.district?.trim().toLowerCase()
-        )
-      : null;
+  const districtConfigurations =
+    getDistrictConfigurations(scheme);
 
   // ==========================================
   // PAGE
@@ -317,6 +363,7 @@ function OfficerApplicationDetails() {
   return (
     <div className="min-h-screen bg-slate-50 p-6">
       <div className="max-w-5xl mx-auto">
+
         {/* ======================================
             BACK
         ====================================== */}
@@ -402,7 +449,9 @@ function OfficerApplicationDetails() {
               </p>
 
               <p className="font-medium text-gray-800 mt-1">
-                {formatDate(application.submittedAt)}
+                {formatDate(
+                  application.submittedAt
+                )}
               </p>
             </div>
 
@@ -444,7 +493,8 @@ function OfficerApplicationDetails() {
               </p>
 
               <p className="font-medium text-gray-800 mt-1">
-                {application.applicantId?.name || "-"}
+                {application.applicantId?.name ||
+                  "-"}
               </p>
             </div>
 
@@ -454,7 +504,8 @@ function OfficerApplicationDetails() {
               </p>
 
               <p className="font-medium text-gray-800 mt-1">
-                {application.applicantId?.email || "-"}
+                {application.applicantId?.email ||
+                  "-"}
               </p>
             </div>
 
@@ -486,7 +537,9 @@ function OfficerApplicationDetails() {
               </p>
 
               <p className="font-medium text-gray-800 mt-1">
-                {formatDate(application.dateOfBirth)}
+                {formatDate(
+                  application.dateOfBirth
+                )}
               </p>
             </div>
 
@@ -580,10 +633,9 @@ function OfficerApplicationDetails() {
               </p>
 
               <p className="font-medium text-gray-800 mt-1">
-                ₹
-                {Number(
-                  application.annualIncome || 0
-                ).toLocaleString("en-IN")}
+                {formatPrice(
+                  application.annualIncome
+                )}
               </p>
             </div>
 
@@ -594,7 +646,8 @@ function OfficerApplicationDetails() {
 
               <p className="mt-1">
                 <span className="inline-block px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-semibold">
-                  {application.incomeCategory || "-"}
+                  {application.incomeCategory ||
+                    "-"}
                 </span>
               </p>
             </div>
@@ -655,17 +708,6 @@ function OfficerApplicationDetails() {
 
             <div>
               <p className="text-xs text-gray-500">
-                Housing Location
-              </p>
-
-              <p className="font-medium text-gray-800 mt-1">
-                {districtConfiguration?.location ||
-                  "Not configured"}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs text-gray-500">
                 House Model
               </p>
 
@@ -680,24 +722,124 @@ function OfficerApplicationDetails() {
               </p>
 
               <p className="font-medium text-gray-800 mt-1">
-                ₹
-                {Number(
-                  scheme.price || 0
-                ).toLocaleString("en-IN")}
+                {formatPrice(scheme.price)}
               </p>
             </div>
+          </div>
 
-            <div>
-              <p className="text-xs text-gray-500">
-                Allotment Date
-              </p>
+          {/* ======================================
+              DISTRICT LOCATIONS
+          ====================================== */}
 
-              <p className="font-medium text-gray-800 mt-1">
-                {formatDate(
-                  districtConfiguration?.allotmentDate
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">
+                  District Housing Locations
+                </h3>
+
+                <p className="text-xs text-gray-500 mt-1">
+                  Available housing configurations for
+                  the applicant's district.
+                </p>
+              </div>
+
+              <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold">
+                {districtConfigurations.length}{" "}
+                {districtConfigurations.length === 1
+                  ? "Location"
+                  : "Locations"}
+              </span>
+            </div>
+
+            {districtConfigurations.length === 0 ? (
+              <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <p className="text-sm text-gray-600">
+                  No district housing configuration has
+                  been created yet.
+                </p>
+
+                <p className="text-xs text-gray-500 mt-1">
+                  This does not prevent application
+                  verification or waiting-list eligibility.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                {districtConfigurations.map(
+                  (configuration, index) => (
+                    <div
+                      key={
+                        configuration?._id ||
+                        `${configuration?.location}-${index}`
+                      }
+                      className="border border-gray-200 rounded-lg p-4 bg-gray-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs text-gray-500">
+                            Location {index + 1}
+                          </p>
+
+                          <p className="font-semibold text-gray-800 mt-1">
+                            {configuration?.location ||
+                              "Location not configured"}
+                          </p>
+                        </div>
+
+                        <span className="text-xs bg-white border border-gray-200 px-2 py-1 rounded">
+                          {Number(
+                            configuration?.availableUnits ||
+                              0
+                          )}{" "}
+                          available
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 mt-4">
+                        <div>
+                          <p className="text-xs text-gray-500">
+                            Total Units
+                          </p>
+
+                          <p className="text-sm font-semibold text-gray-800 mt-1">
+                            {Number(
+                              configuration?.totalUnits ||
+                                0
+                            )}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-gray-500">
+                            Available
+                          </p>
+
+                          <p className="text-sm font-semibold text-green-700 mt-1">
+                            {Number(
+                              configuration?.availableUnits ||
+                                0
+                            )}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-gray-500">
+                            Allotment
+                          </p>
+
+                          <p className="text-xs font-semibold text-gray-800 mt-1">
+                            {formatDate(
+                              configuration?.allotmentDate
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
                 )}
-              </p>
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -711,6 +853,7 @@ function OfficerApplicationDetails() {
           </h2>
 
           <div className="space-y-4">
+
             {/* Income Certificate */}
 
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border border-gray-200 rounded-lg p-4">
@@ -835,7 +978,9 @@ function OfficerApplicationDetails() {
 
                 <p className="text-sm text-gray-600 mt-1">
                   Status:{" "}
-                  {formatStatus(application.status)}
+                  {formatStatus(
+                    application.status
+                  )}
                 </p>
 
                 {application.verifiedAt && (
@@ -917,3 +1062,4 @@ function OfficerApplicationDetails() {
 }
 
 export default OfficerApplicationDetails;
+
