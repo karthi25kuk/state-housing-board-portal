@@ -65,7 +65,7 @@ function Login() {
       } else if (data.user.role === "OFFICER") {
         navigate("/officer");
       } else {
-        navigate("/dashboard");
+        navigate("/applicant");
       }
 
     } catch (error) {

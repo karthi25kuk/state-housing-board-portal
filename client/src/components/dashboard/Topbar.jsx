@@ -1,6 +1,18 @@
 import { FaSearch, FaBell, FaUserCircle } from "react-icons/fa";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 
 function Topbar() {
+  const { user } = useAuth();
+
+  const userName = user?.name || "User";
+  const userRole = user?.role || "APPLICANT";
+
+  // Make role look cleaner
+  const displayRole =
+    userRole.charAt(0).toUpperCase() +
+    userRole.slice(1).toLowerCase();
+
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
       <div className="flex items-center justify-between gap-6">
@@ -12,7 +24,7 @@ function Topbar() {
           </h2>
 
           <p className="text-sm text-gray-500">
-            Welcome back! Here's an overview of your applications.
+            Welcome back! Here's an overview of your activities.
           </p>
         </div>
 
@@ -30,18 +42,21 @@ function Topbar() {
             />
           </div>
 
-          {/* Notification */}
-          <button className="relative text-gray-500 hover:text-blue-600 transition">
+          {/* Notifications */}
+          <Link
+            to="/notifications"
+            className="relative text-gray-500 hover:text-blue-600 transition"
+            title="Notifications"
+          >
             <FaBell size={20} />
-
-            {/* Notification count */}
-            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-              3
-            </span>
-          </button>
+          </Link>
 
           {/* Profile */}
-          <div className="flex items-center gap-2">
+          <Link
+            to="/profile"
+            className="flex items-center gap-2"
+            title="Profile"
+          >
             <FaUserCircle
               size={32}
               className="text-gray-400"
@@ -49,17 +64,16 @@ function Topbar() {
 
             <div className="hidden sm:block">
               <p className="text-sm font-medium text-gray-800">
-                Karthikeyan
+                {userName}
               </p>
 
               <p className="text-xs text-gray-500">
-                Applicant
+                {displayRole}
               </p>
             </div>
-          </div>
+          </Link>
 
         </div>
-
       </div>
     </header>
   );
