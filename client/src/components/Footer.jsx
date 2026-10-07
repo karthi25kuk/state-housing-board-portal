@@ -109,9 +109,9 @@ function Footer() {
           </p>
 
           <div className="flex gap-6 mt-3 md:mt-0">
-            <a href="/">Privacy Policy</a>
-            <a href="/">Terms & Conditions</a>
-            <a href="/">Help</a>
+            <a href="/about">Privacy Policy</a>
+            <a href="/about">Terms & Conditions</a>
+            <a href="/contact">Help</a>
           </div>
 
         </div>

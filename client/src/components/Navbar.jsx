@@ -25,10 +25,6 @@ function Navbar() {
             Home
           </a>
 
-          <a href="/schemes" className="hover:text-blue-600 transition">
-            Schemes
-          </a>
-
           <a href="/about" className="hover:text-blue-600 transition">
             About
           </a>
