@@ -1,6 +1,13 @@
-import heroImage from "../assets/images/House1.png"; // Replace with your image
+import { useNavigate } from "react-router-dom";
+import heroImage from "../assets/images/House1.png";
 
 function Hero() {
+  const navigate = useNavigate();
+
+  const handleLoginRedirect = () => {
+    navigate("/login");
+  };
+
   return (
     <section className="bg-slate-50 py-16">
       <div className="max-w-7xl mx-auto px-6 flex flex-col-reverse lg:flex-row items-center gap-12">
@@ -24,11 +31,17 @@ function Hero() {
           </p>
 
           <div className="mt-8 flex flex-wrap gap-4">
-            <button className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition">
+            <button
+              onClick={handleLoginRedirect}
+              className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
+            >
               Apply Now
             </button>
 
-            <button className="border border-blue-600 text-blue-600 px-6 py-3 rounded-lg hover:bg-blue-50 transition">
+            <button
+              onClick={handleLoginRedirect}
+              className="border border-blue-600 text-blue-600 px-6 py-3 rounded-lg hover:bg-blue-50 transition"
+            >
               Track Status
             </button>
           </div>

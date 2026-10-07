@@ -1,13 +1,17 @@
+import { useNavigate } from "react-router-dom";
 import {
   FaMapMarkerAlt,
   FaPhoneAlt,
   FaEnvelope,
   FaClock,
+  FaArrowLeft,
 } from "react-icons/fa";
 
 function Contact() {
+  const navigate = useNavigate();
+
   return (
-    <section className="py-20 bg-gray-50">
+    <section className="py-20 bg-gray-50 min-h-screen">
       <div className="max-w-7xl mx-auto px-6">
 
         <div className="text-center mb-12">
@@ -23,7 +27,6 @@ function Contact() {
         <div className="grid lg:grid-cols-2 gap-10">
 
           {/* Contact Details */}
-
           <div className="bg-white rounded-xl shadow p-8">
 
             <h3 className="text-2xl font-semibold mb-6">
@@ -80,7 +83,6 @@ function Contact() {
           </div>
 
           {/* Contact Form */}
-
           <div className="bg-white rounded-xl shadow p-8">
 
             <h3 className="text-2xl font-semibold mb-6">
@@ -124,6 +126,17 @@ function Contact() {
 
           </div>
 
+        </div>
+
+        {/* Back to Home */}
+        <div className="flex justify-center mt-12">
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
+          >
+            <FaArrowLeft />
+            Back to Home
+          </button>
         </div>
 
       </div>

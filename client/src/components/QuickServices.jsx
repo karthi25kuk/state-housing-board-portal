@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import {
   FaHome,
   FaFileUpload,
@@ -6,6 +7,12 @@ import {
 } from "react-icons/fa";
 
 function QuickServices() {
+  const navigate = useNavigate();
+
+  const handleServiceClick = () => {
+    navigate("/login");
+  };
+
   const services = [
     {
       title: "Apply for Housing",
@@ -65,7 +72,10 @@ function QuickServices() {
                   {service.description}
                 </p>
 
-                <button className="flex items-center gap-2 text-blue-600 font-semibold hover:text-blue-800 transition">
+                <button
+                  onClick={handleServiceClick}
+                  className="flex items-center gap-2 text-blue-600 font-semibold hover:text-blue-800 transition"
+                >
                   Go to Service
                   <FaArrowRight />
                 </button>
