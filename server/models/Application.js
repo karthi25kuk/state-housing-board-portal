@@ -163,6 +163,20 @@ const applicationSchema = new mongoose.Schema(
     },
 
     // ======================================================
+    // CURRENT HOUSING SITUATION
+    // ======================================================
+
+    housingStatus: {
+      type: String,
+      enum: [
+        "RENTING",
+        "OWN_HOUSE",
+        "INADEQUATE_HOUSING",
+      ],
+      required: true,
+    },
+
+    // ======================================================
     // DOCUMENTS
     // ======================================================
 

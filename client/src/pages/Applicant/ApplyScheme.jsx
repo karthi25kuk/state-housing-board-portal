@@ -35,6 +35,7 @@ function ApplyScheme() {
   const [familyMembers, setFamilyMembers] = useState("");
   const [annualIncome, setAnnualIncome] = useState("");
   const [incomeCategory, setIncomeCategory] = useState("");
+  const [housingStatus, setHousingStatus] = useState("");
   const [employmentStatus, setEmploymentStatus] = useState("");
   const [occupation, setOccupation] = useState("");
 
@@ -42,14 +43,11 @@ function ApplyScheme() {
   // DOCUMENT DETAILS
   // ==========================================
 
-  const [incomeCertificateUrl, setIncomeCertificateUrl] =
-    useState("");
+  const [incomeCertificateUrl, setIncomeCertificateUrl] = useState("");
 
-  const [aadhaarDocumentUrl, setAadhaarDocumentUrl] =
-    useState("");
+  const [aadhaarDocumentUrl, setAadhaarDocumentUrl] = useState("");
 
-  const [addressProofUrl, setAddressProofUrl] =
-    useState("");
+  const [addressProofUrl, setAddressProofUrl] = useState("");
 
   // ==========================================
   // STATE
@@ -90,13 +88,10 @@ function ApplyScheme() {
         setLoading(true);
         setError("");
 
-        const authToken =
-          token || localStorage.getItem("token");
+        const authToken = token || localStorage.getItem("token");
 
         if (!authToken) {
-          setError(
-            "Your session has expired. Please login again."
-          );
+          setError("Your session has expired. Please login again.");
           return;
         }
 
@@ -105,10 +100,7 @@ function ApplyScheme() {
           return;
         }
 
-        const data = await getSchemeById(
-          authToken,
-          schemeId
-        );
+        const data = await getSchemeById(authToken, schemeId);
 
         if (!data) {
           setError("Housing scheme not found.");
@@ -119,10 +111,7 @@ function ApplyScheme() {
       } catch (error) {
         console.error("Fetch scheme error:", error);
 
-        setError(
-          error.message ||
-            "Unable to load housing scheme."
-        );
+        setError(error.message || "Unable to load housing scheme.");
       } finally {
         setLoading(false);
       }
@@ -158,6 +147,34 @@ function ApplyScheme() {
   };
 
   // ==========================================
+  // VALIDATE AGE
+  // ==========================================
+
+  const calculateAge = (dob) => {
+    if (!dob) return null;
+
+    const birthDate = new Date(`${dob}T00:00:00`);
+    const today = new Date();
+
+    if (Number.isNaN(birthDate.getTime()) || birthDate > today) {
+      return null;
+    }
+
+    let age = today.getFullYear() - birthDate.getFullYear();
+
+    const birthdayNotReached =
+      today.getMonth() < birthDate.getMonth() ||
+      (today.getMonth() === birthDate.getMonth() &&
+        today.getDate() < birthDate.getDate());
+
+    if (birthdayNotReached) {
+      age--;
+    }
+
+    return age;
+  };
+
+  // ==========================================
   // SUBMIT APPLICATION
   // ==========================================
 
@@ -167,13 +184,10 @@ function ApplyScheme() {
     setError("");
     setSuccess("");
 
-    const authToken =
-      token || localStorage.getItem("token");
+    const authToken = token || localStorage.getItem("token");
 
     if (!authToken) {
-      setError(
-        "Your session has expired. Please login again."
-      );
+      setError("Your session has expired. Please login again.");
       return;
     }
 
@@ -183,7 +197,7 @@ function ApplyScheme() {
 
     if (!district.trim()) {
       setError(
-        "Your registered district is missing. Please update your profile before applying."
+        "Your registered district is missing. Please update your profile before applying.",
       );
       return;
     }
@@ -203,6 +217,7 @@ function ApplyScheme() {
       !familyMembers ||
       !annualIncome ||
       !incomeCategory ||
+      !housingStatus ||
       !employmentStatus ||
       !occupation ||
       !incomeCertificateUrl ||
@@ -214,13 +229,29 @@ function ApplyScheme() {
     }
 
     // ==========================================
+    // MINIMUM AGE VALIDATION: 21 YEARS
+    // ==========================================
+
+    const applicantAge = calculateAge(dateOfBirth);
+
+    if (applicantAge === null) {
+      setError("Please enter a valid date of birth.");
+      return;
+    }
+
+    if (applicantAge < 21) {
+      setError(
+        "You must be at least 21 years old to apply for a housing scheme.",
+      );
+      return;
+    }
+
+    // ==========================================
     // AADHAAR VALIDATION
     // ==========================================
 
     if (!validateAadhaar()) {
-      setError(
-        "Aadhaar number must contain exactly 12 digits."
-      );
+      setError("Aadhaar number must contain exactly 12 digits.");
       return;
     }
 
@@ -229,9 +260,7 @@ function ApplyScheme() {
     // ==========================================
 
     if (!validateMobile()) {
-      setError(
-        "Please enter a valid 10-digit Indian mobile number."
-      );
+      setError("Please enter a valid 10-digit Indian mobile number.");
       return;
     }
 
@@ -240,9 +269,7 @@ function ApplyScheme() {
     // ==========================================
 
     if (!validatePinCode()) {
-      setError(
-        "PIN code must contain exactly 6 digits."
-      );
+      setError("PIN code must contain exactly 6 digits.");
       return;
     }
 
@@ -250,13 +277,8 @@ function ApplyScheme() {
     // FAMILY MEMBERS
     // ==========================================
 
-    if (
-      !Number.isInteger(Number(familyMembers)) ||
-      Number(familyMembers) < 1
-    ) {
-      setError(
-        "Family members must be at least 1."
-      );
+    if (!Number.isInteger(Number(familyMembers)) || Number(familyMembers) < 1) {
+      setError("Family members must be at least 1.");
       return;
     }
 
@@ -265,9 +287,7 @@ function ApplyScheme() {
     // ==========================================
 
     if (Number(annualIncome) < 0) {
-      setError(
-        "Annual income cannot be negative."
-      );
+      setError("Annual income cannot be negative.");
       return;
     }
 
@@ -276,9 +296,7 @@ function ApplyScheme() {
     // ==========================================
 
     if (!scheme) {
-      setError(
-        "Housing scheme details are unavailable."
-      );
+      setError("Housing scheme details are unavailable.");
       return;
     }
 
@@ -297,50 +315,41 @@ function ApplyScheme() {
     try {
       setSubmitting(true);
 
-      const data = await createApplication(
-        authToken,
-        {
-          schemeId,
+      const data = await createApplication(authToken, {
+        schemeId,
 
-          // Applicant
-          aadhaarNumber:
-            aadhaarNumber.replace(/\s/g, ""),
-          dateOfBirth,
-          gender,
-          mobileNumber,
+        // Applicant
+        aadhaarNumber: aadhaarNumber.replace(/\s/g, ""),
+        dateOfBirth,
+        gender,
+        mobileNumber,
 
-          // Address
-          address,
+        // Address
+        address,
 
-          // District comes from registered User.district
-          district: district.trim(),
+        // District comes from registered User.district
+        district: district.trim(),
 
-          state: state.trim(),
-          pinCode,
+        state: state.trim(),
+        pinCode,
 
-          // Family / Income
-          familyMembers: Number(familyMembers),
-          annualIncome: Number(annualIncome),
-          incomeCategory,
-          employmentStatus,
-          occupation: occupation.trim(),
+        // Family / Income
+        familyMembers: Number(familyMembers),
+        annualIncome: Number(annualIncome),
+        incomeCategory,
+        housingStatus,
+        employmentStatus,
+        occupation: occupation.trim(),
 
-          // Documents
-          incomeCertificateUrl:
-            incomeCertificateUrl.trim(),
+        // Documents
+        incomeCertificateUrl: incomeCertificateUrl.trim(),
 
-          aadhaarDocumentUrl:
-            aadhaarDocumentUrl.trim(),
+        aadhaarDocumentUrl: aadhaarDocumentUrl.trim(),
 
-          addressProofUrl:
-            addressProofUrl.trim(),
-        }
-      );
+        addressProofUrl: addressProofUrl.trim(),
+      });
 
-      setSuccess(
-        data.message ||
-          "Housing application submitted successfully."
-      );
+      setSuccess(data.message || "Housing application submitted successfully.");
 
       // ==========================================
       // CLEAR FORM
@@ -360,6 +369,7 @@ function ApplyScheme() {
       setFamilyMembers("");
       setAnnualIncome("");
       setIncomeCategory("");
+      setHousingStatus("");
       setEmploymentStatus("");
       setOccupation("");
 
@@ -375,14 +385,11 @@ function ApplyScheme() {
         navigate("/applicant/applications");
       }, 1500);
     } catch (error) {
-      console.error(
-        "Create application error:",
-        error
-      );
+      console.error("Create application error:", error);
 
       setError(
         error.message ||
-          "Unable to submit housing application. Please try again."
+          "Unable to submit housing application. Please try again.",
       );
     } finally {
       setSubmitting(false);
@@ -397,9 +404,7 @@ function ApplyScheme() {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
         <div className="text-center">
-          <p className="text-gray-600">
-            Loading scheme details...
-          </p>
+          <p className="text-gray-600">Loading scheme details...</p>
         </div>
       </div>
     );
@@ -435,7 +440,6 @@ function ApplyScheme() {
   return (
     <section className="min-h-screen bg-slate-50 py-10 px-4">
       <div className="max-w-4xl mx-auto">
-
         {/* BACK */}
 
         <Link
@@ -457,8 +461,7 @@ function ApplyScheme() {
           </h1>
 
           <p className="text-gray-500 mt-2">
-            Complete the following details to submit your
-            application.
+            Complete the following details to submit your application.
           </p>
         </div>
 
@@ -466,9 +469,7 @@ function ApplyScheme() {
 
         <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 mt-5">
           <div>
-            <p className="text-sm text-blue-600 font-medium">
-              Selected Scheme
-            </p>
+            <p className="text-sm text-blue-600 font-medium">Selected Scheme</p>
 
             <h2 className="text-xl font-semibold text-gray-800 mt-1">
               {scheme.schemeName}
@@ -485,9 +486,7 @@ function ApplyScheme() {
             {/* House Model */}
 
             <div>
-              <p className="text-xs text-gray-500">
-                House Model
-              </p>
+              <p className="text-xs text-gray-500">House Model</p>
 
               <p className="font-semibold text-gray-800 mt-1">
                 {scheme.houseModel || "-"}
@@ -497,16 +496,11 @@ function ApplyScheme() {
             {/* Price */}
 
             <div>
-              <p className="text-xs text-gray-500">
-                Price
-              </p>
+              <p className="text-xs text-gray-500">Price</p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                {scheme.price !== undefined &&
-                scheme.price !== null
-                  ? `₹${Number(
-                      scheme.price
-                    ).toLocaleString("en-IN")}`
+                {scheme.price !== undefined && scheme.price !== null
+                  ? `₹${Number(scheme.price).toLocaleString("en-IN")}`
                   : "-"}
               </p>
             </div>
@@ -514,17 +508,14 @@ function ApplyScheme() {
             {/* Maximum Annual Income */}
 
             <div>
-              <p className="text-xs text-gray-500">
-                Maximum Annual Income
-              </p>
+              <p className="text-xs text-gray-500">Maximum Annual Income</p>
 
               <p className="font-semibold text-gray-800 mt-1">
-                {scheme.maximumAnnualIncome !==
-                  undefined &&
+                {scheme.maximumAnnualIncome !== undefined &&
                 scheme.maximumAnnualIncome !== null
-                  ? `₹${Number(
-                      scheme.maximumAnnualIncome
-                    ).toLocaleString("en-IN")}`
+                  ? `₹${Number(scheme.maximumAnnualIncome).toLocaleString(
+                      "en-IN",
+                    )}`
                   : "-"}
               </p>
             </div>
@@ -532,9 +523,7 @@ function ApplyScheme() {
             {/* Income Category */}
 
             <div>
-              <p className="text-xs text-gray-500">
-                Eligible Categories
-              </p>
+              <p className="text-xs text-gray-500">Eligible Categories</p>
 
               <p className="font-semibold text-gray-800 mt-1">
                 {scheme.eligibleIncomeCategories?.length
@@ -551,7 +540,6 @@ function ApplyScheme() {
           onSubmit={handleSubmit}
           className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-5"
         >
-
           {/* PERSONAL INFORMATION */}
 
           <div className="mb-8">
@@ -560,12 +548,10 @@ function ApplyScheme() {
             </h2>
 
             <p className="text-sm text-gray-500 mt-1 mb-5">
-              Provide your official identification and
-              personal details.
+              Provide your official identification and personal details.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
               {/* Aadhaar */}
 
               <div>
@@ -579,12 +565,7 @@ function ApplyScheme() {
                   maxLength="12"
                   value={aadhaarNumber}
                   onChange={(e) =>
-                    setAadhaarNumber(
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
-                    )
+                    setAadhaarNumber(e.target.value.replace(/\D/g, ""))
                   }
                   placeholder="Enter 12-digit Aadhaar number"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
@@ -602,12 +583,31 @@ function ApplyScheme() {
                 <input
                   type="date"
                   value={dateOfBirth}
-                  onChange={(e) =>
-                    setDateOfBirth(e.target.value)
-                  }
+                  max={new Date().toLocaleDateString("en-CA")}
+                  onChange={(e) => setDateOfBirth(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 />
+
+                {dateOfBirth && (
+                  <div className="mt-2">
+                    {calculateAge(dateOfBirth) === null ? (
+                      <p className="text-sm text-red-600">
+                        Please enter a valid date of birth.
+                      </p>
+                    ) : calculateAge(dateOfBirth) < 21 ? (
+                      <p className="text-sm text-red-600">
+                        Your age is {calculateAge(dateOfBirth)}. You must be at
+                        least 21 years old to apply.
+                      </p>
+                    ) : (
+                      <p className="text-sm text-green-600">
+                        Your age is {calculateAge(dateOfBirth)}. You meet the
+                        minimum age requirement.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Gender */}
@@ -619,27 +619,17 @@ function ApplyScheme() {
 
                 <select
                   value={gender}
-                  onChange={(e) =>
-                    setGender(e.target.value)
-                  }
+                  onChange={(e) => setGender(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-                  <option value="">
-                    Select gender
-                  </option>
+                  <option value="">Select gender</option>
 
-                  <option value="MALE">
-                    Male
-                  </option>
+                  <option value="MALE">Male</option>
 
-                  <option value="FEMALE">
-                    Female
-                  </option>
+                  <option value="FEMALE">Female</option>
 
-                  <option value="OTHER">
-                    Other
-                  </option>
+                  <option value="OTHER">Other</option>
                 </select>
               </div>
 
@@ -656,12 +646,7 @@ function ApplyScheme() {
                   maxLength="10"
                   value={mobileNumber}
                   onChange={(e) =>
-                    setMobileNumber(
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
-                    )
+                    setMobileNumber(e.target.value.replace(/\D/g, ""))
                   }
                   placeholder="Enter 10-digit mobile number"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
@@ -690,9 +675,7 @@ function ApplyScheme() {
               <textarea
                 rows="3"
                 value={address}
-                onChange={(e) =>
-                  setAddress(e.target.value)
-                }
+                onChange={(e) => setAddress(e.target.value)}
                 placeholder="Enter your complete residential address"
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                 required
@@ -700,7 +683,6 @@ function ApplyScheme() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-
               {/* REGISTERED DISTRICT */}
 
               <div>
@@ -730,9 +712,7 @@ function ApplyScheme() {
                 <input
                   type="text"
                   value={state}
-                  onChange={(e) =>
-                    setState(e.target.value)
-                  }
+                  onChange={(e) => setState(e.target.value)}
                   placeholder="State"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -752,12 +732,7 @@ function ApplyScheme() {
                   maxLength="6"
                   value={pinCode}
                   onChange={(e) =>
-                    setPinCode(
-                      e.target.value.replace(
-                        /\D/g,
-                        ""
-                      )
-                    )
+                    setPinCode(e.target.value.replace(/\D/g, ""))
                   }
                   placeholder="6-digit PIN"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
@@ -775,12 +750,10 @@ function ApplyScheme() {
             </h2>
 
             <p className="text-sm text-gray-500 mt-1 mb-5">
-              Provide information required for eligibility
-              verification.
+              Provide information required for eligibility verification.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
               {/* Family Members */}
 
               <div>
@@ -792,11 +765,7 @@ function ApplyScheme() {
                   type="number"
                   min="1"
                   value={familyMembers}
-                  onChange={(e) =>
-                    setFamilyMembers(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => setFamilyMembers(e.target.value)}
                   placeholder="Enter family members"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -814,11 +783,7 @@ function ApplyScheme() {
                   type="number"
                   min="0"
                   value={annualIncome}
-                  onChange={(e) =>
-                    setAnnualIncome(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => setAnnualIncome(e.target.value)}
                   placeholder="Enter annual income"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -834,32 +799,40 @@ function ApplyScheme() {
 
                 <select
                   value={incomeCategory}
-                  onChange={(e) =>
-                    setIncomeCategory(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => setIncomeCategory(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-                  <option value="">
-                    Select income category
-                  </option>
+                  <option value="">Select income category</option>
 
-                  <option value="EWS">
-                    EWS
-                  </option>
+                  <option value="EWS">EWS</option>
 
-                  <option value="LIG">
-                    LIG
-                  </option>
+                  <option value="LIG">LIG</option>
 
-                  <option value="MIG">
-                    MIG
-                  </option>
+                  <option value="MIG">MIG</option>
 
-                  <option value="HIG">
-                    HIG
+                  <option value="HIG">HIG</option>
+                </select>
+              </div>
+
+              {/* Current Housing Situation */}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Current Housing Situation *
+                </label>
+
+                <select
+                  value={housingStatus}
+                  onChange={(e) => setHousingStatus(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">Select housing situation</option>
+                  <option value="RENTING">Living in a rented house</option>
+                  <option value="OWN_HOUSE">Own a suitable house</option>
+                  <option value="INADEQUATE_HOUSING">
+                    Living in inadequate housing
                   </option>
                 </select>
               </div>
@@ -874,11 +847,7 @@ function ApplyScheme() {
                 <input
                   type="text"
                   value={occupation}
-                  onChange={(e) =>
-                    setOccupation(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => setOccupation(e.target.value)}
                   placeholder="Enter occupation"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                   required
@@ -894,37 +863,21 @@ function ApplyScheme() {
 
                 <select
                   value={employmentStatus}
-                  onChange={(e) =>
-                    setEmploymentStatus(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => setEmploymentStatus(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 bg-white outline-none focus:ring-2 focus:ring-blue-500"
                   required
                 >
-                  <option value="">
-                    Select employment status
-                  </option>
+                  <option value="">Select employment status</option>
 
-                  <option value="EMPLOYED">
-                    Employed
-                  </option>
+                  <option value="EMPLOYED">Employed</option>
 
-                  <option value="SELF_EMPLOYED">
-                    Self Employed
-                  </option>
+                  <option value="SELF_EMPLOYED">Self Employed</option>
 
-                  <option value="UNEMPLOYED">
-                    Unemployed
-                  </option>
+                  <option value="UNEMPLOYED">Unemployed</option>
 
-                  <option value="RETIRED">
-                    Retired
-                  </option>
+                  <option value="RETIRED">Retired</option>
 
-                  <option value="OTHER">
-                    Other
-                  </option>
+                  <option value="OTHER">Other</option>
                 </select>
               </div>
             </div>
@@ -938,8 +891,8 @@ function ApplyScheme() {
             </h2>
 
             <p className="text-sm text-gray-500 mt-1 mb-5">
-              Provide accessible document links for
-              verification. Google Drive links can be used.
+              Provide accessible document links for verification. Google Drive
+              links can be used.
             </p>
 
             {/* Income Certificate */}
@@ -952,19 +905,15 @@ function ApplyScheme() {
               <input
                 type="url"
                 value={incomeCertificateUrl}
-                onChange={(e) =>
-                  setIncomeCertificateUrl(
-                    e.target.value
-                  )
-                }
+                onChange={(e) => setIncomeCertificateUrl(e.target.value)}
                 placeholder="https://drive.google.com/..."
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                 required
               />
 
               <p className="text-xs text-gray-500 mt-1">
-                Upload your income certificate to Google
-                Drive and paste the shareable link here.
+                Upload your income certificate to Google Drive and paste the
+                shareable link here.
               </p>
             </div>
 
@@ -978,11 +927,7 @@ function ApplyScheme() {
               <input
                 type="url"
                 value={aadhaarDocumentUrl}
-                onChange={(e) =>
-                  setAadhaarDocumentUrl(
-                    e.target.value
-                  )
-                }
+                onChange={(e) => setAadhaarDocumentUrl(e.target.value)}
                 placeholder="https://drive.google.com/..."
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                 required
@@ -999,11 +944,7 @@ function ApplyScheme() {
               <input
                 type="url"
                 value={addressProofUrl}
-                onChange={(e) =>
-                  setAddressProofUrl(
-                    e.target.value
-                  )
-                }
+                onChange={(e) => setAddressProofUrl(e.target.value)}
                 placeholder="https://drive.google.com/..."
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500"
                 required
@@ -1031,12 +972,11 @@ function ApplyScheme() {
 
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
             <p className="text-sm text-gray-600">
-              I confirm that all information and documents
-              provided in this application are true and
-              correct. I understand that the Housing Board may
-              verify my identity, income, address, employment
-              and supporting documents before considering my
-              application for allotment.
+              I confirm that all information and documents provided in this
+              application are true and correct. I understand that the Housing
+              Board may verify my identity, income, address, employment and
+              supporting documents before considering my application for
+              allotment.
             </p>
           </div>
 
@@ -1050,8 +990,8 @@ function ApplyScheme() {
             {submitting
               ? "Submitting Application..."
               : !district
-              ? "District Not Available"
-              : "Submit Housing Application"}
+                ? "District Not Available"
+                : "Submit Housing Application"}
           </button>
         </form>
       </div>

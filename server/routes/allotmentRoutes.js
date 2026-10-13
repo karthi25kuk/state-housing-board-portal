@@ -5,17 +5,14 @@ const {
   getOfficerAllotments,
   getMyAllotments,
   respondToAllotment,
+  getEligibleApplicantsForAllotment,
+  downloadAllotmentCopy,
 } = require("../controllers/allotmentController");
 
-const protect =
-  require("../middleware/authMiddleware");
+const protect = require("../middleware/authMiddleware");
+const allowRoles = require("../middleware/roleMiddleware");
 
-const allowRoles =
-  require("../middleware/roleMiddleware");
-
-const router =
-  express.Router();
-
+const router = express.Router();
 
 // ======================================================
 // APPLICANT
@@ -28,6 +25,12 @@ router.get(
   getMyAllotments
 );
 
+router.get(
+  "/:allotmentId/download",
+  protect,
+  allowRoles("APPLICANT"),
+  downloadAllotmentCopy
+);
 
 // ======================================================
 // OFFICER
@@ -47,6 +50,13 @@ router.get(
   getOfficerAllotments
 );
 
+// Fetch eligible applicants for a selected configuration
+router.get(
+  "/configurations/:configurationId/applicants",
+  protect,
+  allowRoles("OFFICER"),
+  getEligibleApplicantsForAllotment
+);
 
 // ======================================================
 // APPLICANT RESPONSE
@@ -58,6 +68,5 @@ router.patch(
   allowRoles("APPLICANT"),
   respondToAllotment
 );
-
 
 module.exports = router;

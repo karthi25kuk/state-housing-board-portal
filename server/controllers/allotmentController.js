@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const PDFDocument = require("pdfkit");
 
 const Allotment = require("../models/Allotment");
 const WaitingList = require("../models/WaitingList");
@@ -15,6 +16,182 @@ const normalize = (value) =>
     .trim()
     .toLowerCase();
 
+const calculatePriorityScore = (application, scheme) => {
+  const incomeLimit = Number(scheme.maximumAnnualIncome);
+  const annualIncome = Number(application.annualIncome);
+
+  const incomeScore =
+    incomeLimit > 0
+      ? Math.max(0, Math.min(40, 40 * (1 - annualIncome / incomeLimit)))
+      : 0;
+
+  const familyMembers = Number(application.familyMembers);
+
+  let familyScore = 5;
+
+  if (familyMembers >= 7) {
+    familyScore = 30;
+  } else if (familyMembers >= 5) {
+    familyScore = 25;
+  } else if (familyMembers >= 3) {
+    familyScore = 15;
+  }
+
+  const housingScores = {
+    RENTING: 30,
+    OWN_HOUSE: 0,
+    INADEQUATE_HOUSING: 30,
+  };
+
+  const housingScore = housingScores[application.housingStatus] ?? 0;
+
+  const totalScore = incomeScore + familyScore + housingScore;
+
+  return {
+    incomeScore: Number(incomeScore.toFixed(2)),
+    familyScore,
+    housingScore,
+    totalScore: Number(totalScore.toFixed(2)),
+  };
+};
+
+const getEligibleApplicantsForAllotment = async (req, res) => {
+  try {
+    const officerId = req.user.userId;
+    const officerDistrict = req.user.district;
+    const { configurationId } = req.params;
+
+    if (!mongoose.isValidObjectId(configurationId)) {
+      return res.status(400).json({
+        message: "Invalid configuration ID.",
+      });
+    }
+
+    if (!officerDistrict?.trim()) {
+      return res.status(400).json({
+        message: "Officer district is not configured.",
+      });
+    }
+
+    const scheme = await HousingScheme.findOne({
+      configurations: {
+        $elemMatch: {
+          _id: configurationId,
+          officer: officerId,
+        },
+      },
+    });
+
+    if (!scheme) {
+      return res.status(404).json({
+        message: "Housing scheme or officer configuration not found.",
+      });
+    }
+
+    const configuration = scheme.configurations.id(configurationId);
+
+    if (
+      !configuration ||
+      normalize(configuration.district) !== normalize(officerDistrict)
+    ) {
+      return res.status(403).json({
+        message: "This configuration does not belong to your district.",
+      });
+    }
+
+    const waitingEntries = await WaitingList.find({
+      schemeId: scheme._id,
+      district: configuration.district,
+      status: "ACTIVE",
+    }).sort({ districtPosition: 1 });
+
+    const applicants = [];
+
+    for (const entry of waitingEntries) {
+      const application = await Application.findOne({
+        _id: entry.applicationId,
+        applicantId: entry.applicantId,
+        schemeId: scheme._id,
+        status: "ELIGIBLE",
+      });
+
+      if (
+        !application ||
+        normalize(application.district) !== normalize(configuration.district)
+      ) {
+        continue;
+      }
+
+      const applicant = await User.findById(entry.applicantId);
+
+      if (
+        !applicant ||
+        normalize(applicant.district) !== normalize(officerDistrict) ||
+        applicant.housingStatus === "ALLOTTED"
+      ) {
+        continue;
+      }
+
+      const existingAllotment = await Allotment.findOne({
+        applicantId: applicant._id,
+        status: { $in: ["OFFERED", "ACCEPTED"] },
+      });
+
+      if (existingAllotment) {
+        continue;
+      }
+
+      applicants.push({
+        applicant: {
+          _id: applicant._id,
+          name: applicant.name,
+          email: applicant.email,
+          phone: applicant.phone,
+          district: applicant.district,
+        },
+        application: {
+          _id: application._id,
+          applicationNumber: application.applicationNumber,
+          annualIncome: application.annualIncome,
+          familyMembers: application.familyMembers,
+          incomeCategory: application.incomeCategory,
+          employmentStatus: application.employmentStatus,
+          occupation: application.occupation,
+          housingStatus: application.housingStatus,
+          submittedAt: application.submittedAt,
+        },
+        districtPosition: entry.districtPosition,
+        priorityScore: calculatePriorityScore(application, scheme),
+      });
+    }
+
+    applicants.sort(
+      (a, b) =>
+        b.priorityScore.totalScore - a.priorityScore.totalScore ||
+        a.districtPosition - b.districtPosition,
+    );
+
+    return res.status(200).json({
+      scheme: {
+        _id: scheme._id,
+        schemeName: scheme.schemeName,
+      },
+      configuration: {
+        _id: configuration._id,
+        district: configuration.district,
+        location: configuration.location,
+        availableUnits: configuration.availableUnits,
+      },
+      applicants,
+    });
+  } catch (error) {
+    console.error("Get eligible allotment applicants error:", error);
+
+    return res.status(500).json({
+      message: "Server error while fetching eligible applicants.",
+    });
+  }
+};
 
 // ======================================================
 // CREATE ALLOTMENT OFFER
@@ -56,9 +233,7 @@ const createAllotment = async (req, res) => {
     const officerId = req.user.userId;
     const officerDistrict = req.user.district;
 
-    const {
-      configurationId,
-    } = req.body;
+    const { configurationId, applicantId } = req.body;
 
     // ==================================================
     // BASIC VALIDATION
@@ -66,18 +241,19 @@ const createAllotment = async (req, res) => {
 
     if (!configurationId) {
       return res.status(400).json({
-        message:
-          "Configuration ID is required.",
+        message: "Configuration ID is required.",
       });
     }
 
-    if (
-      !officerDistrict ||
-      !officerDistrict.trim()
-    ) {
+    if (!mongoose.isValidObjectId(applicantId)) {
       return res.status(400).json({
-        message:
-          "Officer district is not configured.",
+        message: "A valid applicant ID is required.",
+      });
+    }
+
+    if (!officerDistrict || !officerDistrict.trim()) {
+      return res.status(400).json({
+        message: "Officer district is not configured.",
       });
     }
 
@@ -97,22 +273,20 @@ const createAllotment = async (req, res) => {
     //
     // ==================================================
 
-    const scheme =
-      await HousingScheme.findOne({
-        configurations: {
-          $elemMatch: {
-            _id: configurationId,
-            officer: officerId,
-          },
+    const scheme = await HousingScheme.findOne({
+      configurations: {
+        $elemMatch: {
+          _id: configurationId,
+          officer: officerId,
         },
-      }).session(session);
+      },
+    }).session(session);
 
     if (!scheme) {
       await session.abortTransaction();
 
       return res.status(404).json({
-        message:
-          "Housing scheme or officer configuration not found.",
+        message: "Housing scheme or officer configuration not found.",
       });
     }
 
@@ -120,17 +294,13 @@ const createAllotment = async (req, res) => {
     // FIND CONFIGURATION
     // ==================================================
 
-    const configuration =
-      scheme.configurations.id(
-        configurationId
-      );
+    const configuration = scheme.configurations.id(configurationId);
 
     if (!configuration) {
       await session.abortTransaction();
 
       return res.status(404).json({
-        message:
-          "Housing configuration not found.",
+        message: "Housing configuration not found.",
       });
     }
 
@@ -140,14 +310,12 @@ const createAllotment = async (req, res) => {
 
     if (
       !configuration.officer ||
-      configuration.officer.toString() !==
-        officerId.toString()
+      configuration.officer.toString() !== officerId.toString()
     ) {
       await session.abortTransaction();
 
       return res.status(403).json({
-        message:
-          "This configuration is not assigned to you.",
+        message: "This configuration is not assigned to you.",
       });
     }
 
@@ -155,15 +323,11 @@ const createAllotment = async (req, res) => {
     // CONFIGURATION DISTRICT CHECK
     // ==================================================
 
-    if (
-      normalize(configuration.district) !==
-      normalize(officerDistrict)
-    ) {
+    if (normalize(configuration.district) !== normalize(officerDistrict)) {
       await session.abortTransaction();
 
       return res.status(403).json({
-        message:
-          "This configuration belongs to another district.",
+        message: "This configuration belongs to another district.",
       });
     }
 
@@ -173,28 +337,21 @@ const createAllotment = async (req, res) => {
 
     const currentDate = new Date();
 
-    if (
-      !configuration.allotmentDate
-    ) {
+    if (!configuration.allotmentDate) {
       await session.abortTransaction();
 
       return res.status(400).json({
-        message:
-          "Allotment date is not configured for this district.",
+        message: "Allotment date is not configured for this district.",
       });
     }
 
-    if (
-      new Date(configuration.allotmentDate) >
-      currentDate
-    ) {
+    if (new Date(configuration.allotmentDate) > currentDate) {
       await session.abortTransaction();
 
       return res.status(400).json({
-        message:
-          `Allotment date has not arrived. Allotment can begin on ${new Date(
-            configuration.allotmentDate
-          ).toLocaleString()}.`,
+        message: `Allotment date has not arrived. Allotment can begin on ${new Date(
+          configuration.allotmentDate,
+        ).toLocaleString()}.`,
       });
     }
 
@@ -202,203 +359,82 @@ const createAllotment = async (req, res) => {
     // CHECK AVAILABLE UNITS
     // ==================================================
 
+    if (configuration.availableUnits <= 0) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        message: "No houses are currently available in this configuration.",
+      });
+    }
+
+    const selectedWaitingList = await WaitingList.findOne({
+      applicantId,
+      schemeId: scheme._id,
+      district: configuration.district,
+      status: "ACTIVE",
+    }).session(session);
+
+    if (!selectedWaitingList) {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        message:
+          "The selected applicant does not have an active waiting-list entry for this scheme and district.",
+      });
+    }
+
+    const selectedApplication = await Application.findOne({
+      _id: selectedWaitingList.applicationId,
+      applicantId,
+      schemeId: scheme._id,
+      status: "ELIGIBLE",
+    }).session(session);
+
     if (
-      configuration.availableUnits <= 0
+      !selectedApplication ||
+      normalize(selectedApplication.district) !==
+        normalize(configuration.district)
     ) {
       await session.abortTransaction();
 
       return res.status(400).json({
         message:
-          "No houses are currently available in this configuration.",
+          "The selected applicant's application is not eligible for this configuration.",
       });
     }
 
-    // ==================================================
-    // FIND HIGHEST-RANKED ACTIVE APPLICANT
-    // ==================================================
-    //
-    // Ranking is already generated by the waiting-list
-    // module.
-    //
-    // We DO NOT calculate ranking here.
-    //
-    // The first eligible ACTIVE waiting-list entry is:
-    //
-    //     districtPosition ASC
-    //
-    // ==================================================
-
-    const waitingLists =
-      await WaitingList.find({
-        schemeId: scheme._id,
-
-        district: configuration.district,
-
-        status: "ACTIVE",
-      })
-        .sort({
-          districtPosition: 1,
-        })
-        .session(session);
-
-    if (!waitingLists.length) {
-      await session.abortTransaction();
-
-      return res.status(404).json({
-        message:
-          "No active eligible applicants are currently available in the district waiting list.",
-      });
-    }
-
-    // ==================================================
-    // FIND FIRST APPLICANT WHO CAN RECEIVE AN OFFER
-    // ==================================================
-    //
-    // We check applicants in ranking order.
-    //
-    // Applicants who already have:
-    //
-    //     OFFERED
-    //     ACCEPTED
-    //
-    // are skipped.
-    //
-    // This prevents the same applicant from receiving
-    // another active offer.
-    //
-    // ==================================================
-
-    let selectedWaitingList = null;
-    let selectedApplication = null;
-    let selectedApplicant = null;
-
-    for (const entry of waitingLists) {
-      // ----------------------------------------------
-      // Find application
-      // ----------------------------------------------
-
-      const application =
-        await Application.findById(
-          entry.applicationId
-        ).session(session);
-
-      if (!application) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Application must still be eligible
-      // ----------------------------------------------
-
-      if (
-        application.status !== "ELIGIBLE"
-      ) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Verify scheme
-      // ----------------------------------------------
-
-      if (
-        application.schemeId.toString() !==
-        scheme._id.toString()
-      ) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Verify district
-      // ----------------------------------------------
-
-      if (
-        normalize(application.district) !==
-        normalize(configuration.district)
-      ) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Find applicant
-      // ----------------------------------------------
-
-      const applicant =
-        await User.findById(
-          application.applicantId
-        ).session(session);
-
-      if (!applicant) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Verify applicant district
-      // ----------------------------------------------
-
-      if (
-        normalize(applicant.district) !==
-        normalize(officerDistrict)
-      ) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Applicant already allotted
-      // ----------------------------------------------
-
-      if (
-        applicant.housingStatus ===
-        "ALLOTTED"
-      ) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Check existing active allotment
-      // ----------------------------------------------
-
-      const existingAllotment =
-        await Allotment.findOne({
-          applicantId:
-            applicant._id,
-
-          status: {
-            $in: [
-              "OFFERED",
-              "ACCEPTED",
-            ],
-          },
-        }).session(session);
-
-      if (existingAllotment) {
-        continue;
-      }
-
-      // ----------------------------------------------
-      // Applicant is valid
-      // ----------------------------------------------
-
-      selectedWaitingList = entry;
-      selectedApplication = application;
-      selectedApplicant = applicant;
-
-      break;
-    }
-
-    // ==================================================
-    // NO ELIGIBLE APPLICANT FOUND
-    // ==================================================
+    const selectedApplicant = await User.findById(applicantId).session(session);
 
     if (
-      !selectedWaitingList ||
-      !selectedApplication ||
-      !selectedApplicant
+      !selectedApplicant ||
+      normalize(selectedApplicant.district) !== normalize(officerDistrict)
     ) {
       await session.abortTransaction();
 
-      return res.status(404).json({
+      return res.status(400).json({
+        message: "The selected applicant does not belong to your district.",
+      });
+    }
+
+    if (selectedApplicant.housingStatus === "ALLOTTED") {
+      await session.abortTransaction();
+
+      return res.status(400).json({
+        message: "The selected applicant has already been allotted a house.",
+      });
+    }
+
+    const existingAllotment = await Allotment.findOne({
+      applicantId: selectedApplicant._id,
+      status: { $in: ["OFFERED", "ACCEPTED"] },
+    }).session(session);
+
+    if (existingAllotment) {
+      await session.abortTransaction();
+
+      return res.status(409).json({
         message:
-          "No eligible ranked applicant is currently available for allotment.",
+          "The selected applicant already has an active offer or accepted allotment.",
       });
     }
 
@@ -430,31 +466,23 @@ const createAllotment = async (req, res) => {
       unitNumber <= configuration.totalUnits;
       unitNumber++
     ) {
-      const candidateHouseNumber =
-        `HOUSE-${String(unitNumber).padStart(
-          3,
-          "0"
-        )}`;
+      const candidateHouseNumber = `HOUSE-${String(unitNumber).padStart(
+        3,
+        "0",
+      )}`;
 
-      const existingHouse =
-        await Allotment.findOne({
-          configurationId:
-            configuration._id,
+      const existingHouse = await Allotment.findOne({
+        configurationId: configuration._id,
 
-          houseNumber:
-            candidateHouseNumber,
+        houseNumber: candidateHouseNumber,
 
-          status: {
-            $in: [
-              "OFFERED",
-              "ACCEPTED",
-            ],
-          },
-        }).session(session);
+        status: {
+          $in: ["OFFERED", "ACCEPTED"],
+        },
+      }).session(session);
 
       if (!existingHouse) {
-        houseNumber =
-          candidateHouseNumber;
+        houseNumber = candidateHouseNumber;
 
         break;
       }
@@ -468,8 +496,7 @@ const createAllotment = async (req, res) => {
       await session.abortTransaction();
 
       return res.status(400).json({
-        message:
-          "No physical house number is available in this configuration.",
+        message: "No physical house number is available in this configuration.",
       });
     }
 
@@ -477,50 +504,35 @@ const createAllotment = async (req, res) => {
     // CREATE ALLOTMENT
     // ==================================================
 
-    const allotment =
-      new Allotment({
-        applicationId:
-          selectedApplication._id,
+    const allotment = new Allotment({
+      applicationId: selectedApplication._id,
 
-        applicantId:
-          selectedApplicant._id,
+      applicantId: selectedApplicant._id,
 
-        schemeId:
-          scheme._id,
+      schemeId: scheme._id,
 
-        configurationId:
-          configuration._id,
+      configurationId: configuration._id,
 
-        district:
-          configuration.district,
+      district: configuration.district,
 
-        location:
-          configuration.location,
+      location: configuration.location,
 
-        houseNumber:
-          houseNumber,
+      houseNumber: houseNumber,
 
-        houseModel:
-          scheme.houseModel,
+      houseModel: scheme.houseModel,
 
-        price:
-          scheme.price,
+      price: scheme.price,
 
-        status:
-          "OFFERED",
+      status: "OFFERED",
 
-        offeredAt:
-          new Date(),
+      offeredAt: new Date(),
 
-        respondedAt:
-          null,
+      respondedAt: null,
 
-        remarks:
-          "",
+      remarks: "",
 
-        allottedBy:
-          officerId,
-      });
+      allottedBy: officerId,
+    });
 
     await allotment.save({
       session,
@@ -564,37 +576,28 @@ const createAllotment = async (req, res) => {
     await session.commitTransaction();
 
     return res.status(201).json({
-      message:
-        "Allotment offer created successfully.",
+      message: "Allotment offer created successfully.",
 
       allotment,
 
       applicant: {
-        _id:
-          selectedApplicant._id,
+        _id: selectedApplicant._id,
 
-        name:
-          selectedApplicant.name,
+        name: selectedApplicant.name,
 
-        applicationNumber:
-          selectedApplication.applicationNumber,
+        applicationNumber: selectedApplication.applicationNumber,
 
-        districtPosition:
-          selectedWaitingList.districtPosition,
+        districtPosition: selectedWaitingList.districtPosition,
       },
 
       configuration: {
-        _id:
-          configuration._id,
+        _id: configuration._id,
 
-        district:
-          configuration.district,
+        district: configuration.district,
 
-        location:
-          configuration.location,
+        location: configuration.location,
 
-        availableUnits:
-          configuration.availableUnits,
+        availableUnits: configuration.availableUnits,
       },
     });
   } catch (error) {
@@ -602,20 +605,15 @@ const createAllotment = async (req, res) => {
       await session.abortTransaction();
     }
 
-    console.error(
-      "Create allotment error:",
-      error
-    );
+    console.error("Create allotment error:", error);
 
     return res.status(500).json({
-      message:
-        "Server error while creating allotment.",
+      message: "Server error while creating allotment.",
     });
   } finally {
     await session.endSession();
   }
 };
-
 
 // ======================================================
 // GET OFFICER ALLOTMENTS
@@ -629,24 +627,15 @@ const createAllotment = async (req, res) => {
 //
 // ======================================================
 
-const getOfficerAllotments = async (
-  req,
-  res
-) => {
+const getOfficerAllotments = async (req, res) => {
   try {
-    const officerId =
-      req.user.userId;
+    const officerId = req.user.userId;
 
-    const officerDistrict =
-      req.user.district;
+    const officerDistrict = req.user.district;
 
-    if (
-      !officerDistrict ||
-      !officerDistrict.trim()
-    ) {
+    if (!officerDistrict || !officerDistrict.trim()) {
       return res.status(400).json({
-        message:
-          "Officer district is not configured.",
+        message: "Officer district is not configured.",
       });
     }
 
@@ -654,116 +643,300 @@ const getOfficerAllotments = async (
     // FIND OFFICER'S CONFIGURATIONS
     // ==================================================
 
-    const schemes =
-      await HousingScheme.find({
-        configurations: {
-          $elemMatch: {
-            officer: officerId,
-            district: officerDistrict,
-          },
+    const schemes = await HousingScheme.find({
+      configurations: {
+        $elemMatch: {
+          officer: officerId,
+          district: officerDistrict,
         },
-      }).select("_id");
+      },
+    }).select("_id");
 
-    const schemeIds =
-      schemes.map(
-        (scheme) =>
-          scheme._id
-      );
+    const schemeIds = schemes.map((scheme) => scheme._id);
 
     // ==================================================
     // GET ALLOTMENTS
     // ==================================================
 
-    const allotments =
-      await Allotment.find({
-        schemeId: {
-          $in: schemeIds,
-        },
+    const allotments = await Allotment.find({
+      schemeId: {
+        $in: schemeIds,
+      },
 
-        district:
-          officerDistrict,
-      })
-        .populate(
-          "applicantId",
-          "name email phone district housingStatus"
-        )
-        .populate(
-          "applicationId",
-          "applicationNumber status familyMembers annualIncome incomeCategory employmentStatus district"
-        )
-        .populate(
-          "schemeId",
-          "schemeName description houseModel price"
-        )
-        .populate(
-          "allottedBy",
-          "name email district"
-        )
-        .sort({
-          createdAt: -1,
-        });
+      district: officerDistrict,
+    })
+      .populate("applicantId", "name email phone district housingStatus")
+      .populate(
+        "applicationId",
+        "applicationNumber status familyMembers annualIncome incomeCategory employmentStatus district",
+      )
+      .populate("schemeId", "schemeName description houseModel price")
+      .populate("allottedBy", "name email district")
+      .sort({
+        createdAt: -1,
+      });
 
     return res.status(200).json({
       allotments,
     });
   } catch (error) {
-    console.error(
-      "Get officer allotments error:",
-      error
-    );
+    console.error("Get officer allotments error:", error);
 
     return res.status(500).json({
-      message:
-        "Server error while fetching allotments.",
+      message: "Server error while fetching allotments.",
     });
   }
 };
-
 
 // ======================================================
 // GET MY ALLOTMENTS
 // ======================================================
 
-const getMyAllotments = async (
-  req,
-  res
-) => {
+const getMyAllotments = async (req, res) => {
   try {
-    const applicantId =
-      req.user.userId;
+    const applicantId = req.user.userId;
 
-    const allotments =
-      await Allotment.find({
-        applicantId,
-      })
-        .populate(
-          "schemeId",
-          "schemeName description houseModel price"
-        )
-        .populate(
-          "applicationId",
-          "applicationNumber status district"
-        )
-        .sort({
-          createdAt: -1,
-        });
+    const allotments = await Allotment.find({
+      applicantId,
+    })
+      .populate("schemeId", "schemeName description houseModel price")
+      .populate("applicationId", "applicationNumber status district")
+      .sort({
+        createdAt: -1,
+      });
 
     return res.status(200).json({
       allotments,
     });
   } catch (error) {
-    console.error(
-      "Get my allotments error:",
-      error
-    );
+    console.error("Get my allotments error:", error);
 
     return res.status(500).json({
-      message:
-        "Server error while fetching allotments.",
+      message: "Server error while fetching allotments.",
     });
   }
 };
 
+const downloadAllotmentCopy = async (req, res) => {
+  try {
+    const { allotmentId } = req.params;
+    const applicantId = req.user.userId;
+
+    if (!mongoose.isValidObjectId(allotmentId)) {
+      return res.status(400).json({
+        message: "Invalid allotment ID.",
+      });
+    }
+
+    // Only the applicant who owns this allotment can download it.
+    const allotment = await Allotment.findOne({
+      _id: allotmentId,
+      applicantId,
+      status: { $in: ["OFFERED", "ACCEPTED"] },
+    })
+      .populate("applicantId", "name email phone")
+      .populate("applicationId", "applicationNumber")
+      .populate("schemeId", "schemeName houseModel price")
+      .populate("allottedBy", "name");
+
+    if (!allotment) {
+      return res.status(404).json({
+        message:
+          "Allotment not found, access denied, or the allotment is no longer active.",
+      });
+    }
+
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: {
+        top: 55,
+        bottom: 55,
+        left: 55,
+        right: 55,
+      },
+      info: {
+        Title: "House Allotment Order",
+        Author: "State Housing Board",
+      },
+    });
+
+    const filename = `Allotment_Order_${allotment.houseNumber || allotment._id}.pdf`;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Cache-Control", "private, no-store");
+
+    doc.on("error", (error) => {
+      console.error("Allotment PDF generation error:", error);
+
+      if (!res.headersSent) {
+        res.status(500).end("Unable to generate allotment PDF.");
+      } else {
+        res.destroy(error);
+      }
+    });
+
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const left = 55;
+    const right = pageWidth - 55;
+    const contentWidth = right - left;
+
+    const formatDate = (date) => {
+      if (!date) return "Not available";
+
+      return new Date(date).toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
+    };
+
+    const formatPrice = (price) => {
+      const amount = Number(price);
+
+      if (!Number.isFinite(amount)) {
+        return "Not available";
+      }
+
+      return `Rs. ${amount.toLocaleString("en-IN")}`;
+    };
+
+    const addField = (label, value) => {
+      doc.font("Helvetica-Bold").fontSize(10).text(label, left, doc.y, {
+        width: 155,
+        continued: true,
+      });
+
+      doc.font("Helvetica").text(String(value ?? "Not available"), {
+        width: contentWidth - 155,
+      });
+
+      doc.moveDown(0.65);
+    };
+
+    // Header
+    doc.font("Helvetica-Bold").fontSize(19).text("STATE HOUSING BOARD", {
+      align: "center",
+    });
+
+    doc.moveDown(0.4);
+
+    doc.font("Helvetica").fontSize(10).text("HOUSE ALLOTMENT ORDER", {
+      align: "center",
+    });
+
+    doc.moveDown(0.5);
+    doc.moveTo(left, doc.y).lineTo(right, doc.y).stroke();
+
+    doc.moveDown(1.5);
+
+    // Order information
+    doc.font("Helvetica-Bold").fontSize(12).text("ALLOTMENT DETAILS");
+    doc.moveDown(1);
+
+    addField("Allotment Reference:", String(allotment._id));
+    addField("Application Number:", allotment.applicationId?.applicationNumber);
+    addField("Allotment Status:", allotment.status);
+    addField("Offer Date:", formatDate(allotment.offeredAt));
+    addField("Response Date:", formatDate(allotment.respondedAt));
+
+    doc.moveDown(0.5);
+    doc.font("Helvetica-Bold").fontSize(12).text("APPLICANT DETAILS");
+    doc.moveDown(1);
+
+    addField("Applicant Name:", allotment.applicantId?.name);
+    addField("Email:", allotment.applicantId?.email);
+    addField("Phone:", allotment.applicantId?.phone);
+
+    doc.moveDown(0.5);
+    doc.font("Helvetica-Bold").fontSize(12).text("HOUSE DETAILS");
+    doc.moveDown(1);
+
+    addField("Housing Scheme:", allotment.schemeId?.schemeName);
+    addField("District:", allotment.district);
+    addField("Location:", allotment.location);
+    addField("House Number:", allotment.houseNumber);
+    addField(
+      "House Model:",
+      allotment.houseModel || allotment.schemeId?.houseModel,
+    );
+    addField("Allotment Price:", formatPrice(allotment.price));
+
+    doc.moveDown(1);
+
+    doc
+      .font("Helvetica")
+      .fontSize(10)
+      .text(
+        "Please retain this document for your records. " +
+          "The allotment is subject to the applicable housing scheme " +
+          "rules and the terms communicated by the Housing Board.",
+        {
+          width: contentWidth,
+          align: "justify",
+          lineGap: 3,
+        },
+      );
+    
+    doc.moveDown(2);
+
+    doc
+      .font("Helvetica")
+      .fontSize(10)
+      .text(
+        "Reach Out the Housing Board within 10 days after allotment offer received." +
+          " If you have any questions or concerns regarding your allotment, " +
+          "please contact the Housing Board at the earliest."+
+          " Failure to respond within the stipulated time may result in the forfeiture of your allotment." +
+          "Address: State Housing Board, District Collectorate.",
+        {
+          width: contentWidth,
+          align: "justify",
+          lineGap: 3,
+        },
+      );
+
+    doc.moveDown(3);
+
+    doc.font("Helvetica-Bold").fontSize(10).text("Authorized Officer", {
+      align: "right",
+    });
+
+    doc
+      .font("Helvetica")
+      .fontSize(9)
+      .text(allotment.allottedBy?.name || "State Housing Board", {
+        align: "right",
+      });
+
+    doc.moveDown(2);
+
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .fillColor("gray")
+      .text(
+        "System-generated document. Verify its validity with the Housing Board.",
+        {
+          align: "center",
+        },
+      );
+
+    doc.end();
+  } catch (error) {
+    console.error("Download allotment copy error:", error);
+
+    if (!res.headersSent) {
+      return res.status(500).json({
+        message: "Unable to generate the allotment copy.",
+      });
+    }
+
+    res.destroy(error);
+  }
+};
 
 // ======================================================
 // RESPOND TO ALLOTMENT
@@ -783,37 +956,23 @@ const getMyAllotments = async (
 //
 // ======================================================
 
-const respondToAllotment = async (
-  req,
-  res
-) => {
-  const session =
-    await mongoose.startSession();
+const respondToAllotment = async (req, res) => {
+  const session = await mongoose.startSession();
 
   try {
-    const applicantId =
-      req.user.userId;
+    const applicantId = req.user.userId;
 
-    const { allotmentId } =
-      req.params;
+    const { allotmentId } = req.params;
 
-    const {
-      decision,
-      remarks,
-    } = req.body;
+    const { decision, remarks } = req.body;
 
     // ==================================================
     // VALIDATE DECISION
     // ==================================================
 
-    if (
-      !["ACCEPT", "REJECT"].includes(
-        decision
-      )
-    ) {
+    if (!["ACCEPT", "REJECT"].includes(decision)) {
       return res.status(400).json({
-        message:
-          "Decision must be ACCEPT or REJECT.",
+        message: "Decision must be ACCEPT or REJECT.",
       });
     }
 
@@ -823,18 +982,16 @@ const respondToAllotment = async (
     // FIND OFFER
     // ==================================================
 
-    const allotment =
-      await Allotment.findOne({
-        _id: allotmentId,
-        applicantId,
-      }).session(session);
+    const allotment = await Allotment.findOne({
+      _id: allotmentId,
+      applicantId,
+    }).session(session);
 
     if (!allotment) {
       await session.abortTransaction();
 
       return res.status(404).json({
-        message:
-          "Allotment offer not found.",
+        message: "Allotment offer not found.",
       });
     }
 
@@ -842,14 +999,11 @@ const respondToAllotment = async (
     // OFFER MUST BE PENDING
     // ==================================================
 
-    if (
-      allotment.status !== "OFFERED"
-    ) {
+    if (allotment.status !== "OFFERED") {
       await session.abortTransaction();
 
       return res.status(400).json({
-        message:
-          "This allotment offer has already been responded to.",
+        message: "This allotment offer has already been responded to.",
       });
     }
 
@@ -857,39 +1011,29 @@ const respondToAllotment = async (
     // FIND APPLICATION
     // ==================================================
 
-    const application =
-      await Application.findById(
-        allotment.applicationId
-      ).session(session);
+    const application = await Application.findById(
+      allotment.applicationId,
+    ).session(session);
 
     // ==================================================
     // FIND SCHEME
     // ==================================================
 
-    const scheme =
-      await HousingScheme.findById(
-        allotment.schemeId
-      ).session(session);
+    const scheme = await HousingScheme.findById(allotment.schemeId).session(
+      session,
+    );
 
     // ==================================================
     // FIND APPLICANT
     // ==================================================
 
-    const applicant =
-      await User.findById(
-        applicantId
-      ).session(session);
+    const applicant = await User.findById(applicantId).session(session);
 
-    if (
-      !application ||
-      !scheme ||
-      !applicant
-    ) {
+    if (!application || !scheme || !applicant) {
       await session.abortTransaction();
 
       return res.status(404).json({
-        message:
-          "Related allotment records could not be found.",
+        message: "Related allotment records could not be found.",
       });
     }
 
@@ -897,15 +1041,11 @@ const respondToAllotment = async (
     // VERIFY APPLICATION / APPLICANT CONSISTENCY
     // ==================================================
 
-    if (
-      application.applicantId.toString() !==
-      applicant._id.toString()
-    ) {
+    if (application.applicantId.toString() !== applicant._id.toString()) {
       await session.abortTransaction();
 
       return res.status(400).json({
-        message:
-          "Allotment applicant and application do not match.",
+        message: "Allotment applicant and application do not match.",
       });
     }
 
@@ -913,22 +1053,16 @@ const respondToAllotment = async (
     // ACCEPT
     // ==================================================
 
-    if (
-      decision === "ACCEPT"
-    ) {
+    if (decision === "ACCEPT") {
       // ----------------------------------------------
       // Applicant must not already have another house
       // ----------------------------------------------
 
-      if (
-        applicant.housingStatus ===
-        "ALLOTTED"
-      ) {
+      if (applicant.housingStatus === "ALLOTTED") {
         await session.abortTransaction();
 
         return res.status(400).json({
-          message:
-            "Applicant has already been allotted a house.",
+          message: "Applicant has already been allotted a house.",
         });
       }
 
@@ -936,30 +1070,23 @@ const respondToAllotment = async (
       // Update allotment
       // ----------------------------------------------
 
-      allotment.status =
-        "ACCEPTED";
+      allotment.status = "ACCEPTED";
 
-      allotment.respondedAt =
-        new Date();
+      allotment.respondedAt = new Date();
 
-      allotment.remarks =
-        typeof remarks === "string"
-          ? remarks.trim()
-          : "";
+      allotment.remarks = typeof remarks === "string" ? remarks.trim() : "";
 
       // ----------------------------------------------
       // Update applicant
       // ----------------------------------------------
 
-      applicant.housingStatus =
-        "ALLOTTED";
+      applicant.housingStatus = "ALLOTTED";
 
       // ----------------------------------------------
       // Keep application ELIGIBLE
       // ----------------------------------------------
 
-      application.status =
-        "ELIGIBLE";
+      application.status = "ELIGIBLE";
 
       // ----------------------------------------------
       // Save records
@@ -988,22 +1115,18 @@ const respondToAllotment = async (
         },
         {
           $set: {
-            status:
-              "REMOVED",
+            status: "REMOVED",
 
-            removedAt:
-              new Date(),
+            removedAt: new Date(),
 
-            removalReason:
-              "ALLOTMENT_ACCEPTED",
+            removalReason: "ALLOTMENT_ACCEPTED",
 
-            lastUpdated:
-              new Date(),
+            lastUpdated: new Date(),
           },
         },
         {
           session,
-        }
+        },
       );
 
       await session.commitTransaction();
@@ -1020,31 +1143,21 @@ const respondToAllotment = async (
     // REJECT
     // ==================================================
 
-    allotment.status =
-      "REJECTED";
+    allotment.status = "REJECTED";
 
-    allotment.respondedAt =
-      new Date();
+    allotment.respondedAt = new Date();
 
-    allotment.remarks =
-      typeof remarks === "string"
-        ? remarks.trim()
-        : "";
+    allotment.remarks = typeof remarks === "string" ? remarks.trim() : "";
 
-    application.status =
-      "ELIGIBLE";
+    application.status = "ELIGIBLE";
 
-    applicant.housingStatus =
-      "NOT_ALLOTTED";
+    applicant.housingStatus = "NOT_ALLOTTED";
 
     // ==================================================
     // FIND CONFIGURATION
     // ==================================================
 
-    const configuration =
-      scheme.configurations.id(
-        allotment.configurationId
-      );
+    const configuration = scheme.configurations.id(allotment.configurationId);
 
     if (!configuration) {
       await session.abortTransaction();
@@ -1059,15 +1172,11 @@ const respondToAllotment = async (
     // RETURN RESERVED UNIT
     // ==================================================
 
-    if (
-      configuration.availableUnits >=
-      configuration.totalUnits
-    ) {
+    if (configuration.availableUnits >= configuration.totalUnits) {
       await session.abortTransaction();
 
       return res.status(400).json({
-        message:
-          "Configuration unit count is already at maximum capacity.",
+        message: "Configuration unit count is already at maximum capacity.",
       });
     }
 
@@ -1077,24 +1186,18 @@ const respondToAllotment = async (
     // RESTORE WAITING LIST
     // ==================================================
 
-    let waitingList =
-      await WaitingList.findOne({
-        applicationId:
-          allotment.applicationId,
-      }).session(session);
+    let waitingList = await WaitingList.findOne({
+      applicationId: allotment.applicationId,
+    }).session(session);
 
     if (waitingList) {
-      waitingList.status =
-        "ACTIVE";
+      waitingList.status = "ACTIVE";
 
-      waitingList.removedAt =
-        null;
+      waitingList.removedAt = null;
 
-      waitingList.removalReason =
-        null;
+      waitingList.removalReason = null;
 
-      waitingList.lastUpdated =
-        new Date();
+      waitingList.lastUpdated = new Date();
 
       await waitingList.save({
         session,
@@ -1104,57 +1207,42 @@ const respondToAllotment = async (
       // Safety fallback
       // ------------------------------------------------
 
-      const existingActiveCount =
-        await WaitingList.countDocuments({
-          schemeId:
-            allotment.schemeId,
+      const existingActiveCount = await WaitingList.countDocuments({
+        schemeId: allotment.schemeId,
 
-          district:
-            allotment.district,
+        district: allotment.district,
 
-          status:
-            "ACTIVE",
-        }).session(session);
+        status: "ACTIVE",
+      }).session(session);
 
-      waitingList =
-        await WaitingList.create(
-          [
-            {
-              applicantId:
-                applicant._id,
-
-              applicationId:
-                application._id,
-
-              schemeId:
-                scheme._id,
-
-              district:
-                allotment.district,
-
-              districtPosition:
-                existingActiveCount + 1,
-
-              status:
-                "ACTIVE",
-
-              removedAt:
-                null,
-
-              removalReason:
-                null,
-
-              lastUpdated:
-                new Date(),
-            },
-          ],
+      waitingList = await WaitingList.create(
+        [
           {
-            session,
-          }
-        );
+            applicantId: applicant._id,
 
-      waitingList =
-        waitingList[0];
+            applicationId: application._id,
+
+            schemeId: scheme._id,
+
+            district: allotment.district,
+
+            districtPosition: existingActiveCount + 1,
+
+            status: "ACTIVE",
+
+            removedAt: null,
+
+            removalReason: null,
+
+            lastUpdated: new Date(),
+          },
+        ],
+        {
+          session,
+        },
+      );
+
+      waitingList = waitingList[0];
     }
 
     // ==================================================
@@ -1191,20 +1279,15 @@ const respondToAllotment = async (
       await session.abortTransaction();
     }
 
-    console.error(
-      "Respond to allotment error:",
-      error
-    );
+    console.error("Respond to allotment error:", error);
 
     return res.status(500).json({
-      message:
-        "Server error while responding to allotment.",
+      message: "Server error while responding to allotment.",
     });
   } finally {
     await session.endSession();
   }
 };
-
 
 // ======================================================
 // EXPORTS
@@ -1215,4 +1298,6 @@ module.exports = {
   getOfficerAllotments,
   getMyAllotments,
   respondToAllotment,
+  getEligibleApplicantsForAllotment,
+  downloadAllotmentCopy,
 };
