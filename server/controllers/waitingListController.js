@@ -1,4 +1,3 @@
-
 const WaitingList = require("../models/WaitingList");
 const Application = require("../models/Application");
 const HousingScheme = require("../models/HousingScheme");
@@ -9,6 +8,64 @@ const HousingScheme = require("../models/HousingScheme");
 
 const normalizeDistrict = (district) => {
   return district?.trim().toLowerCase();
+};
+
+// ======================================================
+// CALCULATE APPLICANT PRIORITY SCORE
+// ======================================================
+//
+// Maximum score: 100
+//
+// Income:           40 points
+// Family members:   30 points
+// Housing status:   30 points
+//
+// This score is displayed for officer review.
+// It does NOT change the existing ranking or allotment.
+//
+
+const calculatePriorityScore = (application, scheme) => {
+  // 1. INCOME SCORE (maximum 40)
+  const incomeLimit = Number(scheme.maximumAnnualIncome);
+  const annualIncome = Number(application.annualIncome);
+
+  const incomeScore =
+    incomeLimit > 0
+      ? Math.max(0, Math.min(40, 40 * (1 - annualIncome / incomeLimit)))
+      : 0;
+
+  // 2. FAMILY SIZE SCORE (maximum 30)
+  const familyMembers = Number(application.familyMembers);
+
+  let familyScore = 0;
+
+  if (familyMembers >= 7) {
+    familyScore = 30;
+  } else if (familyMembers >= 5) {
+    familyScore = 25;
+  } else if (familyMembers >= 3) {
+    familyScore = 15;
+  } else {
+    familyScore = 5;
+  }
+
+  // 3. HOUSING SITUATION SCORE (maximum 30)
+  const housingScores = {
+    RENTING: 30,
+    OWN_HOUSE: 0,
+    INADEQUATE_HOUSING: 30,
+  };
+
+  const housingScore = housingScores[application.housingStatus] ?? 0;
+
+  const totalScore = incomeScore + familyScore + housingScore;
+
+  return {
+    incomeScore: Number(incomeScore.toFixed(2)),
+    familyScore,
+    housingScore,
+    totalScore: Number(totalScore.toFixed(2)),
+  };
 };
 
 // ======================================================
@@ -40,12 +97,8 @@ const normalizeDistrict = (district) => {
 //
 // ======================================================
 
-const buildDistrictRanking = async (
-  schemeId,
-  district
-) => {
-  const normalizedDistrict =
-    normalizeDistrict(district);
+const buildDistrictRanking = async (schemeId, district) => {
+  const normalizedDistrict = normalizeDistrict(district);
 
   if (!normalizedDistrict) {
     return [];
@@ -60,66 +113,54 @@ const buildDistrictRanking = async (
   // Configuration is intentionally NOT checked.
   //
 
-  const applications =
-    await Application.find({
-      schemeId,
+  const applications = await Application.find({
+    schemeId,
 
-      district: {
-        $regex:
-          `^${district.trim()}$`,
-        $options: "i",
-      },
+    district: {
+      $regex: `^${district.trim()}$`,
+      $options: "i",
+    },
 
-      status: "ELIGIBLE",
-    }).sort({
-      familyMembers: -1,
-      annualIncome: 1,
-      submittedAt: 1,
-      _id: 1,
-    });
+    status: "ELIGIBLE",
+  }).sort({
+    familyMembers: -1,
+    annualIncome: 1,
+    submittedAt: 1,
+    _id: 1,
+  });
 
   // ==================================================
   // FIND EXISTING ACTIVE WAITING-LIST ENTRIES
   // ==================================================
 
-  const existingEntries =
-    await WaitingList.find({
-      schemeId,
+  const existingEntries = await WaitingList.find({
+    schemeId,
 
-      district: {
-        $regex:
-          `^${district.trim()}$`,
-        $options: "i",
-      },
+    district: {
+      $regex: `^${district.trim()}$`,
+      $options: "i",
+    },
 
-      status: "ACTIVE",
-    });
+    status: "ACTIVE",
+  });
 
   // ==================================================
   // MAP EXISTING ENTRIES BY APPLICATION
   // ==================================================
 
-  const existingByApplication =
-    new Map();
+  const existingByApplication = new Map();
 
   existingEntries.forEach((entry) => {
-    existingByApplication.set(
-      entry.applicationId.toString(),
-      entry
-    );
+    existingByApplication.set(entry.applicationId.toString(), entry);
   });
 
   // ==================================================
   // TRACK ELIGIBLE APPLICATION IDS
   // ==================================================
 
-  const eligibleApplicationIds =
-    new Set(
-      applications.map(
-        (application) =>
-          application._id.toString()
-      )
-    );
+  const eligibleApplicationIds = new Set(
+    applications.map((application) => application._id.toString()),
+  );
 
   const now = new Date();
 
@@ -137,15 +178,10 @@ const buildDistrictRanking = async (
   //
 
   for (const entry of existingEntries) {
-    if (
-      !eligibleApplicationIds.has(
-        entry.applicationId.toString()
-      )
-    ) {
+    if (!eligibleApplicationIds.has(entry.applicationId.toString())) {
       entry.status = "REMOVED";
       entry.removedAt = now;
-      entry.removalReason =
-        "APPLICATION_REJECTED";
+      entry.removalReason = "APPLICATION_REJECTED";
       entry.lastUpdated = now;
 
       await entry.save();
@@ -162,50 +198,33 @@ const buildDistrictRanking = async (
 
   const rankedEntries = [];
 
-  for (
-    let index = 0;
-    index < applications.length;
-    index++
-  ) {
-    const application =
-      applications[index];
+  for (let index = 0; index < applications.length; index++) {
+    const application = applications[index];
 
-    let entry =
-      existingByApplication.get(
-        application._id.toString()
-      );
+    let entry = existingByApplication.get(application._id.toString());
 
     // ==================================================
     // EXISTING WAITING-LIST ENTRY
     // ==================================================
 
     if (entry) {
-      entry.applicantId =
-        application.applicantId;
+      entry.applicantId = application.applicantId;
 
-      entry.applicationId =
-        application._id;
+      entry.applicationId = application._id;
 
-      entry.schemeId =
-        schemeId;
+      entry.schemeId = schemeId;
 
-      entry.district =
-        application.district.trim();
+      entry.district = application.district.trim();
 
-      entry.districtPosition =
-        index + 1;
+      entry.districtPosition = index + 1;
 
-      entry.status =
-        "ACTIVE";
+      entry.status = "ACTIVE";
 
-      entry.removedAt =
-        null;
+      entry.removedAt = null;
 
-      entry.removalReason =
-        null;
+      entry.removalReason = null;
 
-      entry.lastUpdated =
-        now;
+      entry.lastUpdated = now;
 
       await entry.save();
 
@@ -222,34 +241,25 @@ const buildDistrictRanking = async (
     // ELIGIBLE but has no WaitingList document yet.
     //
 
-    entry =
-      await WaitingList.create({
-        applicantId:
-          application.applicantId,
+    entry = await WaitingList.create({
+      applicantId: application.applicantId,
 
-        applicationId:
-          application._id,
+      applicationId: application._id,
 
-        schemeId,
+      schemeId,
 
-        district:
-          application.district.trim(),
+      district: application.district.trim(),
 
-        districtPosition:
-          index + 1,
+      districtPosition: index + 1,
 
-        status:
-          "ACTIVE",
+      status: "ACTIVE",
 
-        removedAt:
-          null,
+      removedAt: null,
 
-        removalReason:
-          null,
+      removalReason: null,
 
-        lastUpdated:
-          now,
-      });
+      lastUpdated: now,
+    });
 
     rankedEntries.push(entry);
   }
@@ -271,41 +281,34 @@ const buildDistrictRanking = async (
 
 const getMyWaitingLists = async (req, res) => {
   try {
-    const applicantId =
-      req.user.userId;
+    const applicantId = req.user.userId;
 
-    const waitingLists =
-      await WaitingList.find({
-        applicantId,
+    const waitingLists = await WaitingList.find({
+      applicantId,
 
-        status:
-          "ACTIVE",
-      })
-        .populate(
-          "schemeId",
-          "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price"
-        )
-        .populate(
-          "applicationId",
-          "applicationNumber status submittedAt familyMembers annualIncome incomeCategory"
-        )
-        .sort({
-          districtPosition: 1,
-          createdAt: 1,
-        });
+      status: "ACTIVE",
+    })
+      .populate(
+        "schemeId",
+        "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price",
+      )
+      .populate(
+        "applicationId",
+        "applicationNumber status submittedAt familyMembers annualIncome incomeCategory",
+      )
+      .sort({
+        districtPosition: 1,
+        createdAt: 1,
+      });
 
     return res.status(200).json({
       waitingLists,
     });
   } catch (error) {
-    console.error(
-      "Get my waiting lists error:",
-      error
-    );
+    console.error("Get my waiting lists error:", error);
 
     return res.status(500).json({
-      message:
-        "Server error while fetching waiting list.",
+      message: "Server error while fetching waiting list.",
     });
   }
 };
@@ -330,18 +333,13 @@ const getMyWaitingLists = async (req, res) => {
 //
 // ======================================================
 
-const getOfficerWaitingList = async (
-  req,
-  res
-) => {
+const getOfficerWaitingList = async (req, res) => {
   try {
-    const officerDistrict =
-      req.user.district;
+    const officerDistrict = req.user.district;
 
     if (!officerDistrict?.trim()) {
       return res.status(400).json({
-        message:
-          "Officer district is not configured.",
+        message: "Officer district is not configured.",
       });
     }
 
@@ -355,49 +353,55 @@ const getOfficerWaitingList = async (
     // configuration.
     //
 
-    const waitingLists =
-      await WaitingList.find({
-        district: {
-          $regex:
-            `^${officerDistrict.trim()}$`,
-          $options: "i",
-        },
+    const waitingLists = await WaitingList.find({
+      district: {
+        $regex: `^${officerDistrict.trim()}$`,
+        $options: "i",
+      },
 
-        status:
-          "ACTIVE",
-      })
-        .populate(
-          "applicantId",
-          "name email phone district housingStatus"
-        )
-        .populate(
-          "applicationId",
-          "applicationNumber status familyMembers annualIncome incomeCategory employmentStatus occupation submittedAt"
-        )
-        .populate(
-          "schemeId",
-          "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price"
-        )
-        .sort({
-          schemeId: 1,
-          districtPosition: 1,
-        });
+      status: "ACTIVE",
+    })
+      .populate("applicantId", "name email phone district housingStatus")
+      .populate(
+        "applicationId",
+        "applicationNumber status familyMembers annualIncome incomeCategory employmentStatus occupation submittedAt",
+      )
+      .populate(
+        "schemeId",
+        "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price",
+      )
+      .sort({
+        schemeId: 1,
+        districtPosition: 1,
+      });
+    const waitingListsWithScores = waitingLists.map((entry) => {
+      const application = entry.applicationId;
+      const scheme = entry.schemeId;
+
+      if (!application || !scheme) {
+        return {
+          ...entry.toObject(),
+          priorityScore: null,
+        };
+      }
+
+      return {
+        ...entry.toObject(),
+        priorityScore: calculatePriorityScore(application, scheme),
+      };
+    });
 
     return res.status(200).json({
-      district:
-        officerDistrict,
+      district: officerDistrict,
 
-      waitingLists,
+      waitingLists: waitingListsWithScores,
+
     });
   } catch (error) {
-    console.error(
-      "Get officer waiting list error:",
-      error
-    );
+    console.error("Get officer waiting list error:", error);
 
     return res.status(500).json({
-      message:
-        "Server error while fetching waiting list.",
+      message: "Server error while fetching waiting list.",
     });
   }
 };
@@ -434,16 +438,11 @@ const getOfficerWaitingList = async (
 //
 // ======================================================
 
-const generateRanking = async (
-  req,
-  res
-) => {
+const generateRanking = async (req, res) => {
   try {
-    const officerDistrict =
-      req.user.district;
+    const officerDistrict = req.user.district;
 
-    const { schemeId } =
-      req.params;
+    const { schemeId } = req.params;
 
     // ==================================================
     // VALIDATE OFFICER DISTRICT
@@ -451,8 +450,7 @@ const generateRanking = async (
 
     if (!officerDistrict?.trim()) {
       return res.status(400).json({
-        message:
-          "Officer district is not configured.",
+        message: "Officer district is not configured.",
       });
     }
 
@@ -460,15 +458,11 @@ const generateRanking = async (
     // FIND SCHEME
     // ==================================================
 
-    const scheme =
-      await HousingScheme.findById(
-        schemeId
-      );
+    const scheme = await HousingScheme.findById(schemeId);
 
     if (!scheme) {
       return res.status(404).json({
-        message:
-          "Housing scheme not found.",
+        message: "Housing scheme not found.",
       });
     }
 
@@ -488,37 +482,28 @@ const generateRanking = async (
     // Configuration is NOT required.
     //
 
-    const rankedEntries =
-      await buildDistrictRanking(
-        scheme._id,
-        officerDistrict
-      );
+    const rankedEntries = await buildDistrictRanking(
+      scheme._id,
+      officerDistrict,
+    );
 
     // ==================================================
     // NO ELIGIBLE APPLICATIONS
     // ==================================================
 
-    if (
-      rankedEntries.length === 0
-    ) {
+    if (rankedEntries.length === 0) {
       return res.status(200).json({
-        message:
-          "No eligible applications were found for this district.",
+        message: "No eligible applications were found for this district.",
 
-        schemeId:
-          scheme._id,
+        schemeId: scheme._id,
 
-        schemeName:
-          scheme.schemeName,
+        schemeName: scheme.schemeName,
 
-        district:
-          officerDistrict,
+        district: officerDistrict,
 
-        totalRankedApplicants:
-          0,
+        totalRankedApplicants: 0,
 
-        waitingLists:
-          [],
+        waitingLists: [],
       });
     }
 
@@ -527,37 +512,26 @@ const generateRanking = async (
     // ==================================================
 
     return res.status(200).json({
-      message:
-        `District ranking generated successfully for ${officerDistrict}.`,
+      message: `District ranking generated successfully for ${officerDistrict}.`,
 
-      schemeId:
-        scheme._id,
+      schemeId: scheme._id,
 
-      schemeName:
-        scheme.schemeName,
+      schemeName: scheme.schemeName,
 
-      district:
-        officerDistrict,
+      district: officerDistrict,
 
-      totalRankedApplicants:
-        rankedEntries.length,
+      totalRankedApplicants: rankedEntries.length,
 
-      waitingLists:
-        rankedEntries,
+      waitingLists: rankedEntries,
     });
   } catch (error) {
-    console.error(
-      "Generate ranking error:",
-      error
-    );
+    console.error("Generate ranking error:", error);
 
     // ==================================================
     // DUPLICATE KEY
     // ==================================================
 
-    if (
-      error.code === 11000
-    ) {
+    if (error.code === 11000) {
       return res.status(409).json({
         message:
           "A duplicate waiting-list entry was detected. Please regenerate the ranking.",
@@ -568,20 +542,14 @@ const generateRanking = async (
     // VALIDATION ERROR
     // ==================================================
 
-    if (
-      error.name ===
-      "ValidationError"
-    ) {
+    if (error.name === "ValidationError") {
       return res.status(400).json({
-        message:
-          error.message ||
-          "Invalid waiting-list data.",
+        message: error.message || "Invalid waiting-list data.",
       });
     }
 
     return res.status(500).json({
-      message:
-        "Server error while generating district ranking.",
+      message: "Server error while generating district ranking.",
     });
   }
 };
@@ -605,21 +573,15 @@ const generateRanking = async (
 //
 // ======================================================
 
-const approveRanking = async (
-  req,
-  res
-) => {
+const approveRanking = async (req, res) => {
   try {
-    const officerDistrict =
-      req.user.district;
+    const officerDistrict = req.user.district;
 
-    const { schemeId } =
-      req.params;
+    const { schemeId } = req.params;
 
     if (!officerDistrict?.trim()) {
       return res.status(400).json({
-        message:
-          "Officer district is not configured.",
+        message: "Officer district is not configured.",
       });
     }
 
@@ -627,15 +589,11 @@ const approveRanking = async (
     // FIND SCHEME
     // ==================================================
 
-    const scheme =
-      await HousingScheme.findById(
-        schemeId
-      );
+    const scheme = await HousingScheme.findById(schemeId);
 
     if (!scheme) {
       return res.status(404).json({
-        message:
-          "Housing scheme not found.",
+        message: "Housing scheme not found.",
       });
     }
 
@@ -649,18 +607,14 @@ const approveRanking = async (
     // This prevents stale positions.
     //
 
-    const rankedEntries =
-      await buildDistrictRanking(
-        scheme._id,
-        officerDistrict
-      );
+    const rankedEntries = await buildDistrictRanking(
+      scheme._id,
+      officerDistrict,
+    );
 
-    if (
-      rankedEntries.length === 0
-    ) {
+    if (rankedEntries.length === 0) {
       return res.status(400).json({
-        message:
-          "No active district ranking is available.",
+        message: "No active district ranking is available.",
       });
     }
 
@@ -668,66 +622,49 @@ const approveRanking = async (
     // FETCH POPULATED RANKING FOR RESPONSE
     // ==================================================
 
-    const waitingLists =
-      await WaitingList.find({
-        schemeId:
-          scheme._id,
+    const waitingLists = await WaitingList.find({
+      schemeId: scheme._id,
 
-        district: {
-          $regex:
-            `^${officerDistrict.trim()}$`,
-          $options: "i",
-        },
+      district: {
+        $regex: `^${officerDistrict.trim()}$`,
+        $options: "i",
+      },
 
-        status:
-          "ACTIVE",
-      })
-        .populate(
-          "applicantId",
-          "name email phone district housingStatus"
-        )
-        .populate(
-          "applicationId",
-          "applicationNumber status familyMembers annualIncome incomeCategory employmentStatus occupation submittedAt"
-        )
-        .sort({
-          districtPosition: 1,
-        });
+      status: "ACTIVE",
+    })
+      .populate("applicantId", "name email phone district housingStatus")
+      .populate(
+        "applicationId",
+        "applicationNumber status familyMembers annualIncome incomeCategory housingStatus employmentStatus occupation submittedAt",
+      )
+      .sort({
+        districtPosition: 1,
+      });
 
     // ==================================================
     // RESPONSE
     // ==================================================
 
     return res.status(200).json({
-      message:
-        `District ranking verified successfully for ${officerDistrict}.`,
+      message: `District ranking verified successfully for ${officerDistrict}.`,
 
-      schemeId:
-        scheme._id,
+      schemeId: scheme._id,
 
-      schemeName:
-        scheme.schemeName,
+      schemeName: scheme.schemeName,
 
-      district:
-        officerDistrict,
+      district: officerDistrict,
 
-      rankingApproved:
-        true,
+      rankingApproved: true,
 
-      totalRankedApplicants:
-        waitingLists.length,
+      totalRankedApplicants: waitingLists.length,
 
       waitingLists,
     });
   } catch (error) {
-    console.error(
-      "Approve ranking error:",
-      error
-    );
+    console.error("Approve ranking error:", error);
 
     return res.status(500).json({
-      message:
-        "Server error while approving district ranking.",
+      message: "Server error while approving district ranking.",
     });
   }
 };
@@ -764,19 +701,12 @@ const approveRanking = async (
 //
 // ======================================================
 
-const recalculateWaitingList = async (
-  schemeId,
-  district
-) => {
+const recalculateWaitingList = async (schemeId, district) => {
   // ==================================================
   // BUILD AUTHORITATIVE RANKING
   // ==================================================
 
-  const rankedEntries =
-    await buildDistrictRanking(
-      schemeId,
-      district
-    );
+  const rankedEntries = await buildDistrictRanking(schemeId, district);
 
   // ==================================================
   // RETURN POPULATED ENTRIES
@@ -786,39 +716,29 @@ const recalculateWaitingList = async (
   // identify the newly ranked applicant.
   //
 
-  if (
-    rankedEntries.length === 0
-  ) {
+  if (rankedEntries.length === 0) {
     return [];
   }
 
-  const rankedEntryIds =
-    rankedEntries.map(
-      (entry) => entry._id
-    );
+  const rankedEntryIds = rankedEntries.map((entry) => entry._id);
 
-  const populatedEntries =
-    await WaitingList.find({
-      _id: {
-        $in:
-          rankedEntryIds,
-      },
-    })
-      .populate(
-        "applicantId",
-        "name email phone district housingStatus"
-      )
-      .populate(
-        "applicationId",
-        "applicationNumber status submittedAt familyMembers annualIncome incomeCategory employmentStatus occupation"
-      )
-      .populate(
-        "schemeId",
-        "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price"
-      )
-      .sort({
-        districtPosition: 1,
-      });
+  const populatedEntries = await WaitingList.find({
+    _id: {
+      $in: rankedEntryIds,
+    },
+  })
+    .populate("applicantId", "name email phone district housingStatus")
+    .populate(
+      "applicationId",
+      "applicationNumber status submittedAt familyMembers annualIncome incomeCategory housingStatus employmentStatus occupation",
+    )
+    .populate(
+      "schemeId",
+      "schemeName description eligibleIncomeCategories maximumAnnualIncome houseModel price",
+    )
+    .sort({
+      districtPosition: 1,
+    });
 
   return populatedEntries;
 };
@@ -834,4 +754,3 @@ module.exports = {
   approveRanking,
   recalculateWaitingList,
 };
-

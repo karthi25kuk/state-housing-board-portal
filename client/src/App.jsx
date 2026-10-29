@@ -1,8 +1,4 @@
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-} from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -48,6 +44,7 @@ import OfficerSchemes from "./pages/officer/OfficerSchemes";
 import OfficerSchemeDetails from "./pages/officer/OfficerSchemeDetails";
 import OfficerApplications from "./pages/officer/OfficerApplications";
 import OfficerApplicationDetails from "./pages/officer/OfficerApplicationDetails";
+import OfficerAllotment from "./pages/officer/OfficerAllotment";
 
 // ======================================================
 // APP
@@ -57,35 +54,19 @@ const App = () => {
   return (
     <Router>
       <Routes>
-
         {/* ==================================================
             GENERAL ROUTES
         ================================================== */}
 
-        <Route
-          path="/"
-          element={<Home />}
-        />
+        <Route path="/" element={<Home />} />
 
-        <Route
-          path="/about"
-          element={<About />}
-        />
+        <Route path="/about" element={<About />} />
 
-        <Route
-          path="/contact"
-          element={<Contact />}
-        />
+        <Route path="/contact" element={<Contact />} />
 
-        <Route
-          path="/login"
-          element={<Login />}
-        />
+        <Route path="/login" element={<Login />} />
 
-        <Route
-          path="/register"
-          element={<Register />}
-        />
+        <Route path="/register" element={<Register />} />
 
         {/* ==================================================
             ADMIN DASHBOARD
@@ -271,6 +252,19 @@ const App = () => {
         />
 
         {/* ==================================================
+              OFFICER - PRIORITY-BASED MANUAL ALLOTMENT
+            ================================================== */}
+
+        <Route
+          path="/officer/schemes/:schemeId/configurations/:configurationId/allotment"
+          element={
+            <ProtectedRoute allowedRoles={["OFFICER"]}>
+              <OfficerAllotment />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ==================================================
             OFFICER - APPLICATIONS
         ================================================== */}
 
@@ -300,13 +294,7 @@ const App = () => {
         <Route
           path="/profile"
           element={
-            <ProtectedRoute
-              allowedRoles={[
-                "APPLICANT",
-                "OFFICER",
-                "ADMIN",
-              ]}
-            >
+            <ProtectedRoute allowedRoles={["APPLICANT", "OFFICER", "ADMIN"]}>
               <Profile />
             </ProtectedRoute>
           }
@@ -320,18 +308,11 @@ const App = () => {
         <Route
           path="/notifications"
           element={
-            <ProtectedRoute
-              allowedRoles={[
-                "APPLICANT",
-                "OFFICER",
-                "ADMIN",
-              ]}
-            >
+            <ProtectedRoute allowedRoles={["APPLICANT", "OFFICER", "ADMIN"]}>
               <Notifications />
             </ProtectedRoute>
           }
         />
-
       </Routes>
     </Router>
   );

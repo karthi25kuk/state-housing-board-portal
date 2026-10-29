@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import API_BASE_URL from "../../api";
 
 function CreateScheme() {
   const navigate = useNavigate();
@@ -38,7 +39,7 @@ function CreateScheme() {
         }
 
         const response = await fetch(
-          "http://localhost:5000/api/admin/schemes",
+          `${API_BASE_URL}/api/admin/schemes`,
           {
             method: "GET",
             headers: {
@@ -169,7 +170,7 @@ function CreateScheme() {
       };
 
       const response = await fetch(
-        `http://localhost:5000/api/schemes/officer/${selectedSchemeId}`,
+        `${API_BASE_URL}/api/schemes/officer/${selectedSchemeId}`,
         {
           method: "PATCH",
           headers: {

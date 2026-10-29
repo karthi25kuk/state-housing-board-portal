@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-
+import API_BASE_URL from "../../api";
 import { useAuth } from "../../context/AuthContext";
 
 function MyAllotments() {
@@ -27,7 +27,7 @@ function MyAllotments() {
       setError("");
 
       const response = await fetch(
-        "http://localhost:5000/api/allotments/my",
+        `${API_BASE_URL}/api/allotments/my`,
         {
           method: "GET",
           headers: {
@@ -152,7 +152,7 @@ function MyAllotments() {
       setError("");
 
       const response = await fetch(
-        `http://localhost:5000/api/allotments/${allotmentId}/respond`,
+        `${API_BASE_URL}/api/allotments/${allotmentId}/respond`,
         {
           method: "PATCH",
           headers: {

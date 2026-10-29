@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import API_BASE_URL from "../../api";
 
 function OfficerApplications() {
   const [applications, setApplications] = useState([]);
@@ -29,7 +30,7 @@ function OfficerApplications() {
         }
 
         const response = await fetch(
-          "http://localhost:5000/api/officer/applications",
+          `${API_BASE_URL}/api/officer/applications`,
           {
             method: "GET",
             headers: {

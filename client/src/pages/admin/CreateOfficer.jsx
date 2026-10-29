@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { districts } from "../../utils/districts";
+import API_BASE_URL from "../../api";
 
 function CreateOfficer() {
   const navigate = useNavigate();
@@ -92,7 +93,7 @@ function CreateOfficer() {
       setLoading(true);
 
       const response = await fetch(
-        "http://localhost:5000/api/admin/officers",
+        `${API_BASE_URL}/api/admin/officers`,
         {
           method: "POST",
           headers: {

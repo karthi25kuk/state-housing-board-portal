@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import API_BASE_URL from "../../api";
 
 function CreateScheme() {
   const navigate = useNavigate();
@@ -134,7 +135,7 @@ function CreateScheme() {
       setLoading(true);
 
       const response = await fetch(
-        "http://localhost:5000/api/schemes",
+        `${API_BASE_URL}/api/schemes`,
         {
           method: "POST",
           headers: {

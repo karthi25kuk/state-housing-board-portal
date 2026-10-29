@@ -474,6 +474,18 @@ function ApplicantApplicationDetails() {
               </p>
             </div>
 
+            {/* Housing Status */}
+
+            <div>
+              <p className="text-sm text-gray-500">
+                Housing Status
+              </p>
+
+              <p className="font-semibold text-gray-800 mt-1">
+                {application.housingStatus || "-"}
+              </p>
+            </div>
+
             {/* Employment */}
 
             <div>

@@ -12,6 +12,7 @@ import {
 } from "react-icons/fa";
 
 import { useAuth } from "../../context/AuthContext";
+import API_BASE_URL from "../../api";
 
 function OfficerSchemes() {
   const { token, user } = useAuth();
@@ -75,7 +76,7 @@ function OfficerSchemes() {
       }
 
       const response = await fetch(
-        "http://localhost:5000/api/schemes/officer",
+        `${API_BASE_URL}/api/schemes/officer`,
         {
           method: "GET",
           headers: {
