@@ -2,8 +2,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import API_BASE_URL from "../../api";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = `${API_BASE_URL}/api`;
 
 function OfficerAllotment() {
   const { schemeId, configurationId } = useParams();

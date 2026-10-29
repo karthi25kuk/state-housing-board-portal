@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import API_BASE_URL from "../../api";
 
 function OfficerApplicationDetails() {
   const { applicationId } = useParams();
@@ -40,7 +41,7 @@ function OfficerApplicationDetails() {
         }
 
         const response = await fetch(
-          `http://localhost:5000/api/officer/applications/${applicationId}`,
+          `${API_BASE_URL}/api/officer/applications/${applicationId}`,
           {
             method: "GET",
             headers: {
@@ -235,7 +236,7 @@ function OfficerApplicationDetails() {
       }
 
       const response = await fetch(
-        `http://localhost:5000/api/officer/applications/${applicationId}/verify`,
+        `${API_BASE_URL}/api/officer/applications/${applicationId}/verify`,
         {
           method: "PATCH",
           headers: {

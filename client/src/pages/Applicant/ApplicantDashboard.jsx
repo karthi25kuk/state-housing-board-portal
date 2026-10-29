@@ -10,6 +10,7 @@ import {
   FaCalendarAlt,
 } from "react-icons/fa";
 import { Link } from "react-router-dom";
+import API_BASE_URL from "../../api";
 
 import Sidebar from "../../components/dashboard/Sidebar";
 import Topbar from "../../components/dashboard/Topbar";
@@ -81,7 +82,7 @@ function ApplicantDashboard() {
       setAllotmentError("");
 
       const response = await fetch(
-        `http://localhost:5000/api/allotments/${allotment._id}/download`,
+        `${API_BASE_URL}/api/allotments/${allotment._id}/download`,
         {
           method: "GET",
           headers: {
@@ -284,7 +285,7 @@ function ApplicantDashboard() {
         setAllotmentError("");
 
         const response = await fetch(
-          "http://localhost:5000/api/allotments/my",
+          `${API_BASE_URL}/api/allotments/my`,
           {
             method: "GET",
             headers: {
