@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:5000/api/applications";
+import API_BASE_URL from "../api";
+
+const API_URL = `${API_BASE_URL}/api/applications`;
 
 // ==========================================
 // CREATE / SUBMIT APPLICATION
